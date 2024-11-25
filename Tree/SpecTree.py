@@ -4,6 +4,8 @@ from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from utils import get_sampling_logits, ChildrenAccept, get_residual
+from collections import defaultdict
+
 class SpecTree(Tree):
     def __init__(self, 
                  draft_model_engine :GraphInferenceEngine,
@@ -83,6 +85,8 @@ class SpecTree(Tree):
         
         self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
         self.seq_to_use = list(range(self.max_length))
+        self.accept_idx_map = defaultdict(int)
+
     
     @torch.inference_mode()
     def collective_grow_static(self, idx_list :list[int], n_branch_list :list[int], benchmark=False, grow_step = None):
@@ -143,17 +147,20 @@ class SpecTree(Tree):
         if len(children) == 0:
             return (-1, p)
         
-        for pos in children:
+        for idx, pos in enumerate(children):
 
             token = self.tokens[pos + (self.ground_truth_len - 1)]
             q = softmax(draft_logits / self.temperature, dim=-1)
             r = self.r[pos + (self.ground_truth_len - 1)]
             
             if p[token] > r * q[token]:
+                # self.accept_idx_map[idx] += 1
                 return (pos + (self.ground_truth_len - 1), None)
+                # return (-1, p)
             else:
                 p = self.residual_graph(p, q)
                 draft_logits[token] = torch.finfo(self.dtype).min
+        # self.accept_idx_map[-1] += 1
         return (-1, p)
 
     @torch.inference_mode()
@@ -410,6 +417,7 @@ class SpecTreeTest(Tree):
             q = softmax(draft_logits / self.temperature, dim=-1)
             r = self.r[pos + (self.ground_truth_len - 1)]
             if p[token] >= r * q[token]:
+                # print(parent_id, idx)
                 return ChildrenAccept(accept_mark=0, token=token, position=pos + (self.ground_truth_len - 1), successor_order=idx)
             else:
                 p = get_residual(p, q)

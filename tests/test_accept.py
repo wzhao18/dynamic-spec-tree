@@ -26,7 +26,7 @@ parser.add_argument('--W', type=int, default=16, help='max width')
 parser.add_argument('--M', type=int, default=256, help='max length')
 parser.add_argument('--Mode', type=str, default="greedy", help='tree mode')
 parser.add_argument('--offloading', action='store_true')
-parser.add_argument('--dst', type=str, default="../acceptance-rate-vector.pt", help='destination for accepetance rate vector')
+parser.add_argument('--dst', type=str, default="../acceptance-384-64-stochastic.pt", help='destination for accepetance rate vector')
 args = parser.parse_args()
 print(args)
 
@@ -45,6 +45,7 @@ def simulation_stochastic(target_model : GraphInferenceEngineTG, draft_model: Gr
     position_ids = torch.zeros(max_length).long().to('cuda:0')
     branch_prob = torch.zeros(w + 1).to('cuda:0')
     output_branch_prob = torch.zeros(w + 2).to('cuda:0')
+    token_accept_idx = []
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dataloader), total=num_eval_steps):
             input_ids = batch['input_ids'][..., :128]
@@ -53,6 +54,7 @@ def simulation_stochastic(target_model : GraphInferenceEngineTG, draft_model: Gr
             if labels[0][-1] == -100: terminate = True
             draft_kv_len = 0
             target_kv_len = 0
+            curr_accept_idx = []
             while input_ids.shape[1] < 256 and terminate == False:
                 attn_mask.fill_(torch.finfo(dtype).min)
                 spectree = SpecTreeTest(prefix=input_ids.squeeze(0), device='cuda:0', temperature=T,
@@ -66,7 +68,7 @@ def simulation_stochastic(target_model : GraphInferenceEngineTG, draft_model: Gr
                 
                 valid_tokens, draft_kv_len, target_kv_len,  b, terminate = spectree.verify(benchmark=True)
                 branch_prob[b] += 1
-                
+                curr_accept_idx.append(b)
                 
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
                 num_large_model_steps += 1
@@ -75,14 +77,19 @@ def simulation_stochastic(target_model : GraphInferenceEngineTG, draft_model: Gr
                 
             draft_model.clear_kv()
             target_model.clear_kv()
-            if num_large_model_steps > 0:
-                print(num_decoding_steps / num_large_model_steps)
+            # if num_large_model_steps > 0:
+            #     print(num_decoding_steps / num_large_model_steps)
+            token_accept_idx.append(curr_accept_idx)
     print("total decoding steps: {}".format(num_decoding_steps), "large model steps: {}".format(num_large_model_steps), "avg decoding step: {}".format(num_decoding_steps / num_large_model_steps))
     branch_prob = branch_prob / branch_prob.sum(dim=-1) 
     accumated_prob = branch_prob.cumsum(dim=-1)
     output_branch_prob[1:] = branch_prob
     print(output_branch_prob)
-    torch.save(output_branch_prob, args.dst)
+    # torch.save(output_branch_prob, args.dst)
+    # torch.save(saved_branch_prob, "../acceptance-384-32-stochastic-individual.pt")
+    import json
+    with open('../acceptance-384-32-stochastic-individual.json', 'w') as fp:
+        json.dump(token_accept_idx, fp)
     return num_decoding_steps / num_large_model_steps
 
 def simulation_greedy(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9, w=4, max_length=512):

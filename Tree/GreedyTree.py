@@ -3,6 +3,8 @@ from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from utils import ChildrenAccept
+from collections import defaultdict
+
 class GreedyTree(Tree):
     def __init__(self, 
                  draft_model_engine :GraphInferenceEngine,
@@ -81,6 +83,7 @@ class GreedyTree(Tree):
         self.target_kv_len = target_kv_len
     
         self.seq_to_use = list(range(self.max_length))
+        self.accept_idx_map = defaultdict(int)
     
     @torch.inference_mode()
     def collective_grow_static(self, idx_list, n_branch_list :list[int], benchmark=False, grow_step = None):
@@ -137,10 +140,11 @@ class GreedyTree(Tree):
         if len(children) == 0:
             return -1
         
-        for pos in children:
+        for idx, pos in enumerate(children):
 
             token = self.tokens[pos + (self.ground_truth_len - 1)]
             if token == target_token:
+                # print(parent_id, idx)
                 return pos + (self.ground_truth_len - 1)
         
         return -1
@@ -190,6 +194,7 @@ class GreedyTree(Tree):
         terminal = False
         while True:
             parent_id = accept_list[-1]
+            # print('layer', len(accept_list))
             pos = self.accept_step(parent_id=parent_id)
             if pos != -1:
                 accept_list.append(pos)
@@ -383,6 +388,7 @@ class GreedyTreeTest(Tree):
 
             token = self.tokens[pos + (self.ground_truth_len - 1)]
             if token == target_token:
+                print(parent_id, idx)
                 return ChildrenAccept(accept_mark=0, token=token, position=pos + (self.ground_truth_len - 1), successor_order=idx)
         
         return ChildrenAccept(accept_mark=1)

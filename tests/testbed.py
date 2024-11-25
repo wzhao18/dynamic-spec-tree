@@ -18,10 +18,10 @@ from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from Engine.offload_engine import OffloadEngine
 import random
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, help='model')
-parser.add_argument('--target', type=str, help='target model')
-parser.add_argument('--dataset', type=str, default="../dataset/c4_small.json", help='dataset path')
-parser.add_argument('--growmap', type=str, default="../growmaps/68m_7b-64.pt", help='growmap path')
+parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='model')
+parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
+parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
+parser.add_argument('--growmap', type=str, help='growmap path')
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
@@ -85,7 +85,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 num_large_model_steps += 1
                 input_ids = valid_tokens.unsqueeze(0)
                 if (input_ids[0][-1] == 2) or (input_ids[0][-1] == 0): terminate = True
-            
+            print(spectree.accept_idx_map)
             torch.cuda.synchronize()
             t2 = time.time()
             total_time += (t2 - t1)

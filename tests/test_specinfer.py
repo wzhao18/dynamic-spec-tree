@@ -18,9 +18,9 @@ from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from Engine.offload_engine import OffloadEngine
 import random
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, help='model')
-parser.add_argument('--target', type=str, help='target model')
-parser.add_argument('--dataset', type=str, default="../dataset/c4_small.json", help='dataset path')
+parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='model')
+parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
+parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
 parser.add_argument('--growmap', type=str, default="../growmaps/68m_7b-64.pt", help='growmap path')
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
@@ -90,7 +90,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             total_time += (t2 - t1)
             draft_model.clear_kv()
             target_model.clear_kv()
-    print("total time :{:.5f}s, latency :{:.5f}s, decoding step: {}, large model step: {}, {}".format(total_time, 24.2/(total_time / num_decoding_steps), num_decoding_steps, num_large_model_steps, (num_decoding_steps/ num_large_model_steps)))
+    print("total time :{:.5f}s, latency :{:.5f}s, decoding step: {}, large model step: {}, {}".format(total_time, (total_time / num_decoding_steps), num_decoding_steps, num_large_model_steps, (num_decoding_steps/ num_large_model_steps)))
     return num_decoding_steps / num_large_model_steps
 
 
