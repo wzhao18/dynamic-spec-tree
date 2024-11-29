@@ -64,6 +64,9 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             draft_kv_len = 0
             target_kv_len = 0
             attn_mask.fill_(torch.finfo(dtype).min)
+            # set up attn_mask, set prefix, etc.
+            # call draft_model_engine.inference to get draft_logits
+            # set fraft_kv_len = len(prefix), target_kv_len = 0
             spectree = SpecInferTree(prefix=input_ids.squeeze(0), device='cuda:0', temperature=T,
                                     top_p=top_p,
                                     draft_kv_len=draft_kv_len, target_kv_len=target_kv_len,
@@ -77,7 +80,16 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             torch.cuda.synchronize()
             t1 = time.time()
             while input_ids.shape[1] < 256 and terminate == False:
+                # iterate draft_steps (tree layer), for each step:
+                    # sample from draft_logits, stored in self.tokens
+                    # update start_pos, end_pos, attn_mask
+                    # call draft_model_engine.graph_inference to get new draft_model_logits
+                    # update draft_kv_len
                 spectree.construct_grow_map()
+                # verify draft tokens recursively through the tree, 
+                # update ground_truth_len, num_nodes, total_nodes, attn_mask, 
+                # call draft_model_engine.graph_inference to get draft_logits
+                # update draft_kv_len, target_kv_len
                 valid_tokens, draft_kv_len, target_kv_len, terminate = spectree.verify()
                 
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
@@ -262,6 +274,8 @@ else:
         idx_len = len(idx_lists[i])
         num_samples = max(branch_lists[i])
         sampling_callables[i] = None
+    # branch_lists = [[8], [5, 2, 1, 1, 1, 0, 0, 0], [3, 1, 1, 0, 0, 1, 0, 1, 0, 0], [2, 1, 0, 1, 0, 1, 0], [1, 0, 0, 0, 0], [0]]
+    # sample_gather_indices = {0: tensor([0, 1, 2, 3, 4, 5, 6, 7]), 1: tensor([ 0,  1,  2,  3,  4,  5,  6, 10, 15, 20]), 2: tensor([ 0,  1,  2,  3,  6, 15, 21]), 3: tensor([ 0,  1,  2,  6, 10]), 4: tensor([0])}
     for i in range(draft_step - 1):
         ith_gather_list = []
         max_num_samples = max(branch_lists[i])
