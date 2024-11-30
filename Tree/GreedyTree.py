@@ -388,7 +388,7 @@ class GreedyTreeTest(Tree):
 
             token = self.tokens[pos + (self.ground_truth_len - 1)]
             if token == target_token:
-                print(parent_id, idx)
+                # print(parent_id, idx)
                 return ChildrenAccept(accept_mark=0, token=token, position=pos + (self.ground_truth_len - 1), successor_order=idx)
         
         return ChildrenAccept(accept_mark=1)
