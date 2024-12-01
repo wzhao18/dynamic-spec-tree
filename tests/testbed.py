@@ -13,7 +13,7 @@ from data_converter import convert_wiki_dataset, convert_cnn_dataset, convert_c4
 import argparse
 from Tree.SpecTree import SpecTree
 import time
-from utils import get_sampling_logits, _make_causal_mask, cuda_graph_for_residual, cuda_graph_for_sampling_without_replacement
+from utils import get_sampling_logits, _make_causal_mask, cuda_graph_for_residual, cuda_graph_for_sampling_without_replacement, sampling_with_replacement_without_graphs, residual_without_graphs
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from Engine.offload_engine import OffloadEngine
 import random
@@ -22,6 +22,7 @@ parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='mod
 parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
 parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
 parser.add_argument('--growmap', type=str, help='growmap path')
+# parser.add_argument('--tree_size', type=int, default=32)
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
@@ -65,6 +66,9 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             draft_kv_len = 0
             target_kv_len = 0
             attn_mask.fill_(torch.finfo(dtype).min)
+            # set up attn_mask, set prefix, etc.
+            # call draft_model_engine.inference to get draft_logits
+            # set fraft_kv_len = len(prefix), target_kv_len = 0
             spectree = SpecTree(prefix=input_ids.squeeze(0), device='cuda:0', temperature=T,
                                     top_p=top_p,
                                     draft_kv_len=draft_kv_len, target_kv_len=target_kv_len,
@@ -78,7 +82,16 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             torch.cuda.synchronize()
             t1 = time.time()
             while input_ids.shape[1] < 256 and terminate == False:
+                # iterate draft_steps (tree layer), for each step:
+                    # sample from draft_logits, stored in self.tokens
+                    # update start_pos, end_pos, attn_mask
+                    # call draft_model_engine.graph_inference to get new draft_model_logits
+                    # update draft_kv_len
                 spectree.construct_grow_map()
+                # verify draft tokens recursively through the tree, 
+                # update ground_truth_len, num_nodes, total_nodes, attn_mask, 
+                # call draft_model_engine.graph_inference to get draft_logits
+                # update draft_kv_len, target_kv_len
                 valid_tokens, draft_kv_len, target_kv_len, terminate = spectree.verify()
                 
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
@@ -252,27 +265,40 @@ else:
     else:
         target_model =  GraphInferenceEngineTG(max_length=args.M, model_name_or_path = args.target, dtype = torch.float16, device="cuda:0")
     
-    residual_graph = cuda_graph_for_residual()
+    # residual_graph = cuda_graph_for_residual()
+    residual_graph = residual_without_graphs()
     path = args.growmap
     grow_map = torch.load(path)
 
+    # tree_size = args.tree_size
     tree_size = grow_map["size"]
+
     print(tree_size)
+    # [[0], [1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13, 14, 15, 16, 17, 18], [19, 20, 21, 22, 23, 24, 25], [26, 27, 28, 29, 30], [31]]
     idx_lists = grow_map["roots"]
+
+    # [[8], [5, 2, 1, 1, 1, 0, 0, 0], [3, 1, 1, 0, 0, 1, 0, 1, 0, 0], [2, 1, 0, 1, 0, 1, 0], [1, 0, 0, 0, 0], [0]]
     branch_lists = grow_map['branches']
+
+    # [[0], [1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13, 14, 15, 16, 17, 18], [19, 20, 21, 22, 23, 24, 25], [26, 27, 28, 29, 30], [31]]
     draft_step = len(grow_map["roots"])
     
-    graph_capture_list = [sum(x) for x in branch_lists]
-    graph_capture_list.append(1)
-    draft_model.initialize_cuda_graph(graph_capture_list)
+    # [8, 10, 7, 5, 1, 0]
+    # graph_capture_list = [sum(x) for x in branch_lists]
+    # graph_capture_list.append(1)
+    
+    # draft_model.initialize_cuda_graph(graph_capture_list)
     sampling_callables = {}
     sample_gather_indices = {}
     for i in range(draft_step - 1):
         idx_len = len(idx_lists[i])
         num_samples = max(branch_lists[i])
-        sampling_callables[i] = cuda_graph_for_sampling_without_replacement(
+        sampling_callables[i] = sampling_with_replacement_without_graphs(
+    #     sampling_callables[i] = cuda_graph_for_sampling_without_replacement(
             max_length=args.M, idx_len=idx_len, num_samples=num_samples,
             temperature=args.T, tree_size=tree_size) 
+
+    # {0: tensor([0, 1, 2, 3, 4, 5, 6, 7]), 1: tensor([ 0,  1,  2,  3,  4,  5,  6, 10, 15, 20]), 2: tensor([ 0,  1,  2,  3,  6, 15, 21]), 3: tensor([ 0,  1,  2,  6, 10]), 4: tensor([0])}
     for i in range(draft_step - 1):
         ith_gather_list = []
         max_num_samples = max(branch_lists[i])

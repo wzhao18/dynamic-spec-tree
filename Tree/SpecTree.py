@@ -37,27 +37,27 @@ class SpecTree(Tree):
         self.top_p = top_p
         self.residual_graph = residual_graph
         self.grow_map = grow_map
-        self.sampling_callables = sampling_callables
-        self.sample_gather_indices = sample_gather_indices
+        # self.sampling_callables = sampling_callables
+        # self.sample_gather_indices = sample_gather_indices
         self.draft_step = len(self.grow_map["roots"])
         self.grow_map_roots_gpu = []
         for x in self.grow_map["roots"]:
              self.grow_map_roots_gpu.append(torch.Tensor(x).to(self.device).long())
-        self.Successors = self.grow_map["Successors"]
+        # [[1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13], [14, 15], [16], [17], [18], [], [], [], [19, 20, 21], [22], [23], [], [], [24], [], [25], [], [], [26, 27], [28], [], [29], [], [30], [], [31], [], [], [], [], []]
+        # self.Successors = self.grow_map["Successors"]
         tree_mask :torch.Tensor = self.grow_map["mask"].to(self.device)
         tree_mask = (tree_mask == 0).type(self.dtype)
         
         tree_mask.masked_fill_(tree_mask > 0, torch.finfo(self.dtype).min)
-        self.initialize(attn_mask, sequence, new_tokens_buffer, parents_buffer, position_ids, None)
-        self.set_prefix(prefix=prefix)
+        self.initialize(attn_mask, sequence, new_tokens_buffer, parents_buffer, position_ids, None) # self.full_attn_mask = attn_mask.repeat(2, 2) -> (max_length*2, max_length*2)
+        self.set_prefix(prefix=prefix)  # set full_attn_mask[:self.max_length, :self.max_length] to be normal causal mask
         self.tree_size = self.grow_map["size"]
         self.tree_mask = tree_mask
 
-        self.full_attn_mask[self.max_length - self.tree_size + 1: self.max_length, self.max_length - self.tree_size + 1: self.max_length] = tree_mask[1:, 1:]
-
+        self.full_attn_mask[self.max_length - self.tree_size + 1: self.max_length, self.max_length - self.tree_size + 1: self.max_length] = tree_mask[1:, 1:]   # set last [self.tree_size, self.tree_size] of the causal mask at the first half of [:self.max_length, :self.max_length] to be tree_mask[1:, 1:]
 
         total_nodes = len(prefix) + self.tree_size - 1
-        self.attn_mask = self.full_attn_mask[self.max_length - total_nodes: 2 * self.max_length - total_nodes, self.max_length - total_nodes: 2 * self.max_length - total_nodes]
+        self.attn_mask = self.full_attn_mask[self.max_length - total_nodes: 2 * self.max_length - total_nodes, self.max_length - total_nodes: 2 * self.max_length - total_nodes]    # update attn_mask to be full_attn_mask[max_length - total_nodes : 2*max_length - total_nodes] (normal causal mask for prefix + tree mask for tree nodes, extend until length=max_length, but mask will be min for all the nodes after tree size)
         self.ground_truth_len = len(prefix)
         self.r = torch.rand(len(position_ids), dtype=self.dtype).to(self.device)
         
@@ -104,6 +104,11 @@ class SpecTree(Tree):
                 torch.cuda.synchronize()
                 t1 = time.time()
 
+        # In SpecInferTree, 
+        # max_branch = max(n_branch_list)
+        # sampling_logits = self.draft_logits[idx_list]
+        # sampling_q = softmax(sampling_logits / self.temperature, dim=-1)
+        # new_tokens_set = sampling_q.multinomial(num_samples=max_branch, replacement=True).flatten()
         new_tokens_set :torch.LongTensor = self.sampling_callables[grow_step](self.draft_logits[idx_list], self.rand[idx_list])
         self.tokens[self.num_nodes: self.num_nodes + total_branch] = new_tokens_set[self.sample_gather_indices[grow_step]]
         if benchmark:
@@ -117,7 +122,7 @@ class SpecTree(Tree):
         
         start_pos = self.num_nodes - total_branch
         end_pos = self.num_nodes
-        attn_mask = self.attn_mask[self.num_nodes - total_branch: self.num_nodes]
+        attn_mask = self.attn_mask[self.num_nodes - total_branch: self.num_nodes]   # attn_mask from the previous tokens to current all output (+ total_branch)
         attn_mask = attn_mask[None, None, :, :]
         
         draft_model_outputs = self.draft_model_engine.graph_inference(
@@ -207,6 +212,8 @@ class SpecTree(Tree):
         accept_list = self.seq_to_use[:self.ground_truth_len]
         
         terminal = False
+        # Recursively check if any children will be accepted
+        # pos is the accepted position, res is the residual probability if no position is accepted (used to randomly sample)
         while True:
             parent_id = accept_list[-1]
             pos, res = self.accept_step(parent_id=parent_id)
@@ -228,6 +235,7 @@ class SpecTree(Tree):
             else:
                 self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
 
+        # accept_list is a list of position indices
         self.tokens[:accept_length] = self.tokens[accept_list]
 
         self.draft_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
@@ -253,6 +261,7 @@ class SpecTree(Tree):
         if benchmark:
             sample_time = 0
             compute_time = 0
+        # iterate each layer of the tree, sample tokens
         for i in range(self.draft_step - 1):
                 if benchmark:
                         _, t1, t2 = self.collective_grow_static(self.grow_map_roots_gpu[i], self.grow_map['branches'][i], benchmark=benchmark, grow_step=i)

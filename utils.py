@@ -249,6 +249,27 @@ def cuda_graph_for_sampling_with_replacement(
     
         
 
+def sampling_with_replacement_without_graphs(
+        device="cuda:0", dtype=torch.float16, 
+        dim=32000, max_length=384, 
+        idx_len=8, num_samples=16,
+        temperature=0.6, tree_size = 64):
 
+    def run(draft_logits, rand_vector):
+        # Perform sampling directly without CUDA graphs
+        positions = sampling_without_replacement(
+            sampling_logits=draft_logits,
+            rand=rand_vector,
+            num_samples=num_samples,
+            temperature=temperature
+        )
+        return positions
 
+    return run
 
+def residual_without_graphs(device="cuda:0", dtype=torch.float16, dim=32000):
+    def run(p, q):
+        # Direct computation without CUDA graphs
+        return get_residual(p, q)
+    
+    return run
