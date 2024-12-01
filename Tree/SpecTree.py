@@ -37,14 +37,14 @@ class SpecTree(Tree):
         self.top_p = top_p
         self.residual_graph = residual_graph
         self.grow_map = grow_map
-        # self.sampling_callables = sampling_callables
-        # self.sample_gather_indices = sample_gather_indices
+        self.sampling_callables = sampling_callables
+        self.sample_gather_indices = sample_gather_indices
         self.draft_step = len(self.grow_map["roots"])
         self.grow_map_roots_gpu = []
         for x in self.grow_map["roots"]:
              self.grow_map_roots_gpu.append(torch.Tensor(x).to(self.device).long())
         # [[1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13], [14, 15], [16], [17], [18], [], [], [], [19, 20, 21], [22], [23], [], [], [24], [], [25], [], [], [26, 27], [28], [], [29], [], [30], [], [31], [], [], [], [], []]
-        # self.Successors = self.grow_map["Successors"]
+        self.Successors = self.grow_map["Successors"]
         tree_mask :torch.Tensor = self.grow_map["mask"].to(self.device)
         tree_mask = (tree_mask == 0).type(self.dtype)
         
