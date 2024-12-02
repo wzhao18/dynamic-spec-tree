@@ -5,7 +5,7 @@ import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement_dynamic, _make_causal_mask
 
-class DynamicTree(Tree):
+class DynamicTree:
     def __init__(self, 
                  draft_model_engine :GraphInferenceEngine,
                  target_model_engine :GraphInferenceEngineTG,
@@ -36,12 +36,19 @@ class DynamicTree(Tree):
         position_ids = torch.arange(len(prefix)).to(self.device)
         self.storage_ids = torch.arange(self.max_length).to(self.device)
         
-        attn_mask = _make_causal_mask((1, len(prefix)), dtype=self.dtype, device=self.device)
+        attn_mask = _make_causal_mask((1, self.max_length), dtype=self.dtype, device=self.device)
 
-        draft_model_outputs = self.draft_model_engine.inference(input_ids=self.tokens.unsqueeze(0), 
-                            storage_ids=self.storage_ids[:len(prefix)], 
-                            position_ids=position_ids.unsqueeze(0),
-                            attn_mask=attn_mask[None, None, :, :])
+        # print(f"input_ids.shape: {self.tokens[:len(prefix)].unsqueeze(0).shape}")
+        # print(f"storage_ids.shape: {self.storage_ids[:len(prefix)].shape}")
+        # print(f"position_ids.shape: {position_ids.unsqueeze(0).shape}")
+        # print(f"attn_mask.shape: {attn_mask[:len(prefix)].shape}")
+
+        draft_model_outputs = self.draft_model_engine.inference(
+            input_ids=self.tokens[:len(prefix)].unsqueeze(0), 
+            storage_ids=self.storage_ids[:len(prefix)], 
+            position_ids=position_ids.unsqueeze(0),
+            attn_mask=attn_mask[:len(prefix)][None, None, :, :]
+        )
         
         self.draft_logits = torch.zeros((self.max_length, vocab_size), dtype=self.dtype).to(self.device)
         self.draft_logits[0] = draft_model_outputs[...,-1,:][0]
@@ -165,10 +172,14 @@ class DynamicTree(Tree):
             num_descandents = subtree_size - 1
             logit = sampling_q[i]
 
-            confidence_cutoff = 1 / num_descandents
+            if num_descandents > 0:
+                confidence_cutoff = 1 / num_descandents
+            else:
+                confidence_cutoff = 100
 
             mask = logit >= confidence_cutoff
-            token_ids = torch.nonzero(mask, as_tuple=True)[1]
+            token_ids = torch.nonzero(mask, as_tuple=True)[0]
+
             scores = logit[mask]
             scores, sorted_indices = torch.sort(scores, descending=True)
             token_ids = token_ids[sorted_indices]
@@ -212,12 +223,27 @@ class DynamicTree(Tree):
 
         position_ids = torch.zeros(next_layer_num_nodes).long().to(self.device) + len(self.prefix) + grow_step - 1
         
+        # initially all masked out (-inf)
+        attn_mask = torch.full(
+            (next_layer_num_nodes, self.max_length),
+            fill_value=torch.finfo(self.dtype).min,
+            dtype=self.dtype,
+            device=self.device
+        )
+
+        # attend to previous tokens
+        attn_mask[:, :start_pos] = 0
+
+        # attention between tree tokens
+        attn_mask[:, start_pos:start_pos + self.tree_size] = self.tree_mask[start_node_idx:end_node_idx, :]
+
         draft_model_outputs = self.draft_model_engine.graph_inference(
             input_ids = self.tokens[start_pos:end_pos].unsqueeze(0),
             position_ids = position_ids.unsqueeze(0),
-            attn_mask = self.tree_mask[start_node_idx:end_node_idx][None, None, :, :],
+            attn_mask = attn_mask[None, None, :, :],
             storage_ids=self.storage_ids[start_pos:end_pos]
         )
+        
         self.draft_logits[start_node_idx:end_node_idx] = draft_model_outputs[0]
     
     # @torch.inference_mode()
