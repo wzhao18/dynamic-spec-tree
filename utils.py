@@ -1,6 +1,7 @@
 import torch
 import dataclasses
 from torch.nn.functional import softmax
+import math
 
 def get_residual(p: torch.Tensor, q:torch.Tensor):
     residual = (p - q).relu_()
@@ -18,19 +19,39 @@ def sampling_without_replacement(
         
         return position
 
-def sampling_without_replacement_confidence(
+def sampling_without_replacement_dynamic(
         sampling_logits: torch.Tensor, 
         rand: torch.Tensor,  
-        num_samples: int,
-        temperature :float):
+        branch_tree_size: list[int],
+        temperature: float):
 
+        # shape: (num_nodes, vocab_size)
         sampling_q = softmax(sampling_logits / temperature, dim=-1)
-        position = (rand.log()/sampling_q).topk(k=num_samples).indices.flatten()
+        # shape: (num_nodes, layer_size)
+        position = (rand.log()/sampling_q).topk(k=max(branch_tree_size)).indices
 
-        # Get the confidence for the sampled indices
-        confidence_score = sampling_q[position]
-        
-        return position, confidence_score
+        # shape: (num_nodes, layer_size)
+        confidence_scores = torch.gather(sampling_q, dim=1, index=position)
+
+        next_branch_tree_size = []
+        final_position = []
+        branch_num = []
+        for node, tree_size in enumerate(branch_tree_size):
+            confidence = confidence_scores[node]
+            current_branch_size = 0
+            for i, score in enumerate(confidence):
+                proportional_branch = math.floor(score * tree_size)
+                if current_branch_size + proportional_branch + 1 > tree_size:
+                    proportional_branch = tree_size - current_branch_size - 1
+                
+                next_branch_tree_size.append(proportional_branch)
+                current_branch_size += proportional_branch + 1
+                final_position.append(position[node][i])
+                if current_branch_size >= tree_size:
+                    branch_num.append(i + 1)
+                    break
+
+        return final_position, next_branch_tree_size, branch_num
 
 def sampling_with_replacement(
         sampling_logits: torch.Tensor,   
