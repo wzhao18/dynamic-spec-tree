@@ -15,6 +15,17 @@ def sampling_without_replacement(
 
         sampling_q = softmax(sampling_logits / temperature, dim=-1)
         position = (rand.log()/sampling_q).topk(k=num_samples).indices.flatten()
+        
+        return position
+
+def sampling_without_replacement_confidence(
+        sampling_logits: torch.Tensor, 
+        rand: torch.Tensor,  
+        num_samples: int,
+        temperature :float):
+
+        sampling_q = softmax(sampling_logits / temperature, dim=-1)
+        position = (rand.log()/sampling_q).topk(k=num_samples).indices.flatten()
 
         # Get the confidence for the sampled indices
         confidence_score = sampling_q[position]
@@ -257,18 +268,16 @@ def sampling_with_replacement_without_graphs(
         device="cuda:0", dtype=torch.float16, 
         dim=32000, max_length=384, 
         idx_len=8, num_samples=16,
-        temperature=0.6, tree_size = 64, confidence=False):
+        temperature=0.6, tree_size = 64):
 
     def run(draft_logits, rand_vector):
         # Perform sampling directly without CUDA graphs
-        positions, confidence_scores = sampling_without_replacement(
+        positions = sampling_without_replacement(
             sampling_logits=draft_logits,
             rand=rand_vector,
             num_samples=num_samples,
             temperature=temperature
         )
-        if confidence:
-            return positions, confidence_scores
         return positions
 
     return run

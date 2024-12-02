@@ -3,8 +3,7 @@ from torch.nn.functional import softmax
 from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
-from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement
-from collections import defaultdict
+from utils import get_sampling_logits, ChildrenAccept, get_residual
 
 class SpecTree(Tree):
     def __init__(self, 
@@ -27,9 +26,7 @@ class SpecTree(Tree):
                  position_ids = None,
                  residual_graph = None,
                  sampling_callables = None,
-                 sample_gather_indices = None,
-                 tree_size = 32,
-                 tree_depth = 6) -> None:
+                 sample_gather_indices = None) -> None:
         super().__init__(device=device, max_length=max_length)
         assert self.max_length == draft_model_engine.engine.max_length
         self.max_target_seq = max_target_seq
@@ -53,7 +50,7 @@ class SpecTree(Tree):
         tree_mask.masked_fill_(tree_mask > 0, torch.finfo(self.dtype).min)
         self.initialize(attn_mask, sequence, new_tokens_buffer, parents_buffer, position_ids, None) # self.full_attn_mask = attn_mask.repeat(2, 2) -> (max_length*2, max_length*2)
         self.set_prefix(prefix=prefix)  # set full_attn_mask[:self.max_length, :self.max_length] to be normal causal mask
-        # self.tree_size = self.grow_map["size"]
+        self.tree_size = self.grow_map["size"]
         self.tree_mask = tree_mask
 
         self.full_attn_mask[self.max_length - self.tree_size + 1: self.max_length, self.max_length - self.tree_size + 1: self.max_length] = tree_mask[1:, 1:]   # set last [self.tree_size, self.tree_size] of the causal mask at the first half of [:self.max_length, :self.max_length] to be tree_mask[1:, 1:]
@@ -63,11 +60,9 @@ class SpecTree(Tree):
         self.ground_truth_len = len(prefix)
         self.r = torch.rand(len(position_ids), dtype=self.dtype).to(self.device)
         
-        # TODO: update position_ids
         self.position_ids[len(prefix) : len(prefix) + self.tree_size - 1] = (self.grow_map["depth"][1:].to(self.device) + len(prefix) - 1)
         self.storage_ids = torch.arange(self.max_length).to(self.device)
-        # tensor([0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5])
-        # self.depth = self.grow_map["depth"][1:].to(self.device)
+        self.depth = self.grow_map["depth"][1:].to(self.device)
         
         self.draft_logits = torch.zeros((self.max_length, vocab_size), dtype=self.dtype).to(self.device)
         if draft_kv_len == 0:
@@ -112,10 +107,7 @@ class SpecTree(Tree):
         # sampling_logits = self.draft_logits[idx_list]
         # sampling_q = softmax(sampling_logits / self.temperature, dim=-1)
         # new_tokens_set = sampling_q.multinomial(num_samples=max_branch, replacement=True).flatten()
-
-        # TODO: add code to decide the number of branches for each generated node according to confidence_scores
-        # new_tokens_set :torch.LongTensor = self.sampling_callables[grow_step](self.draft_logits[idx_list], self.rand[idx_list])
-        new_tokens_set, confidence_scores = sampling_without_replacement(self.draft_logits[idx_list], self.rand[idx_list], total_branch, self.temperature)
+        new_tokens_set :torch.LongTensor = self.sampling_callables[grow_step](self.draft_logits[idx_list], self.rand[idx_list])
         self.tokens[self.num_nodes: self.num_nodes + total_branch] = new_tokens_set[self.sample_gather_indices[grow_step]]
         if benchmark:
                     torch.cuda.synchronize()
@@ -512,4 +504,3 @@ class SpecTreeTest(Tree):
     
     
 
-                

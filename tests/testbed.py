@@ -21,9 +21,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='model')
 parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
 parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
-# parser.add_argument('--growmap', type=str, help='growmap path')
-parser.add_argument('--tree_size', type=int, default=32)
-parser.add_argument('--tree_depth', type=int, default=6)
+parser.add_argument('--growmap', type=str, help='growmap path')
+# parser.add_argument('--tree_size', type=int, default=32)
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
@@ -271,45 +270,44 @@ else:
     path = args.growmap
     grow_map = torch.load(path)
 
-    tree_size = args.tree_size
-    tree_depth = args.tree_depth
-    # tree_size = grow_map["size"]
+    # tree_size = args.tree_size
+    tree_size = grow_map["size"]
 
     print(tree_size)
     # [[0], [1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13, 14, 15, 16, 17, 18], [19, 20, 21, 22, 23, 24, 25], [26, 27, 28, 29, 30], [31]]
-    # idx_lists = grow_map["roots"]
+    idx_lists = grow_map["roots"]
 
     # [[8], [5, 2, 1, 1, 1, 0, 0, 0], [3, 1, 1, 0, 0, 1, 0, 1, 0, 0], [2, 1, 0, 1, 0, 1, 0], [1, 0, 0, 0, 0], [0]]
-    # branch_lists = grow_map['branches']
+    branch_lists = grow_map['branches']
 
     # [[0], [1, 2, 3, 4, 5, 6, 7, 8], [9, 10, 11, 12, 13, 14, 15, 16, 17, 18], [19, 20, 21, 22, 23, 24, 25], [26, 27, 28, 29, 30], [31]]
-    # draft_step = len(grow_map["roots"])
+    draft_step = len(grow_map["roots"])
     
     # [8, 10, 7, 5, 1, 0]
     # graph_capture_list = [sum(x) for x in branch_lists]
     # graph_capture_list.append(1)
     
     # draft_model.initialize_cuda_graph(graph_capture_list)
-    # sampling_callables = {}
-    # sample_gather_indices = {}
-    # for i in range(draft_step - 1):
-    #     idx_len = len(idx_lists[i])
-    #     num_samples = max(branch_lists[i])
-    #     sampling_callables[i] = sampling_with_replacement_without_graphs(
-    # #     sampling_callables[i] = cuda_graph_for_sampling_without_replacement(
-    #         max_length=args.M, idx_len=idx_len, num_samples=num_samples,
-    #         temperature=args.T, tree_size=tree_size) 
+    sampling_callables = {}
+    sample_gather_indices = {}
+    for i in range(draft_step - 1):
+        idx_len = len(idx_lists[i])
+        num_samples = max(branch_lists[i])
+        sampling_callables[i] = sampling_with_replacement_without_graphs(
+    #     sampling_callables[i] = cuda_graph_for_sampling_without_replacement(
+            max_length=args.M, idx_len=idx_len, num_samples=num_samples,
+            temperature=args.T, tree_size=tree_size) 
 
-    # # {0: tensor([0, 1, 2, 3, 4, 5, 6, 7]), 1: tensor([ 0,  1,  2,  3,  4,  5,  6, 10, 15, 20]), 2: tensor([ 0,  1,  2,  3,  6, 15, 21]), 3: tensor([ 0,  1,  2,  6, 10]), 4: tensor([0])}
-    # for i in range(draft_step - 1):
-    #     ith_gather_list = []
-    #     max_num_samples = max(branch_lists[i])
-    #     for j, branch in enumerate(branch_lists[i]):
-    #         branch_index = torch.arange(branch, device="cuda:0", dtype=torch.long)
-    #         branch_index = branch_index + j * max_num_samples
-    #         ith_gather_list.append(branch_index)
-    #     ith_gather_list = torch.cat(ith_gather_list)
-    #     sample_gather_indices[i] = ith_gather_list
+    # {0: tensor([0, 1, 2, 3, 4, 5, 6, 7]), 1: tensor([ 0,  1,  2,  3,  4,  5,  6, 10, 15, 20]), 2: tensor([ 0,  1,  2,  3,  6, 15, 21]), 3: tensor([ 0,  1,  2,  6, 10]), 4: tensor([0])}
+    for i in range(draft_step - 1):
+        ith_gather_list = []
+        max_num_samples = max(branch_lists[i])
+        for j, branch in enumerate(branch_lists[i]):
+            branch_index = torch.arange(branch, device="cuda:0", dtype=torch.long)
+            branch_index = branch_index + j * max_num_samples
+            ith_gather_list.append(branch_index)
+        ith_gather_list = torch.cat(ith_gather_list)
+        sample_gather_indices[i] = ith_gather_list
     
 
 accelerator = Accelerator()
@@ -329,9 +327,6 @@ elif args.Mode == 'greedy':
         top_p=args.P,
         max_length=args.M, 
         residual_graph = residual_graph, 
-        tree_size = tree_size,
-        tree_depth = tree_depth,
-        # grow_map = grow_map, 
-        # sampling_callables=sampling_callables, 
-        # sample_gather_indices = sample_gather_indices
-        )
+        grow_map = grow_map, 
+        sampling_callables=sampling_callables, 
+        sample_gather_indices = sample_gather_indices)
