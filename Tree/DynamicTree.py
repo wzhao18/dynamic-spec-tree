@@ -167,7 +167,7 @@ class DynamicTree(Tree):
 
             confidence_cutoff = 1 / num_descandents
 
-            mask = logit > confidence_cutoff
+            mask = logit >= confidence_cutoff
             token_ids = torch.nonzero(mask, as_tuple=True)[1]
             scores = logit[mask]
             scores, sorted_indices = torch.sort(scores, descending=True)
