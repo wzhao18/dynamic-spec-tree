@@ -184,13 +184,23 @@ class DynamicTree:
         for i in range(len(layer_node_indices)):
 
             node_idx = layer_node_indices[i]
+
+            print(f"node_idx: {node_idx}")
+
             subtree_size = self.subtree_sizes[node_idx]
             num_descandents = subtree_size - 1
             logit = sampling_q[i]
 
-            print(f"num_descandents: {num_descandents}")
+            # Get the top 10 confidence scores and their indices
+            top_scores, top_indices = torch.topk(logit, k=5)
 
-            print(logit)
+            # Print the results
+            print("Top 5 Confidence Scores:")
+            for score, idx in zip(top_scores, top_indices):
+                print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
+
+
+            print(f"num_descandents: {num_descandents}")
 
             if num_descandents > 0:
                 confidence_cutoff = 1 / num_descandents
@@ -212,7 +222,11 @@ class DynamicTree:
             child_tree_sizes = torch.floor(scores * num_descandents).int().tolist()
             next_layer_tree_sizes.extend(child_tree_sizes)
 
-            last_node_idx = self.node_indices[-1][-1]
+            if next_layer_node_indices:
+                last_node_idx = next_layer_node_indices[-1]
+            else:
+                last_node_idx = self.node_indices[-1][-1]
+
             children_node_indices = range(last_node_idx + 1, last_node_idx + 1 + num_children)
 
             next_layer_node_indices.extend(children_node_indices)
@@ -220,7 +234,7 @@ class DynamicTree:
             self.depths.append(grow_step + 1)
 
             for i in range(token_ids.size(0)):
-                print(f"\t{self.decode_tokens(token_ids[i])}")
+                print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
 
             self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids
             self.num_nodes += num_children
@@ -241,6 +255,10 @@ class DynamicTree:
         self.subtree_sizes.extend(next_layer_tree_sizes)
         self.layer_branches.append(layer_branch)
         
+        print(f"self.node_indices: {self.node_indices}")
+        print(f"self.subtree_sizes: {self.subtree_sizes}")
+
+
         next_layer_num_nodes = len(next_layer_node_indices)
         start_pos = self.num_nodes - next_layer_num_nodes
         end_pos = self.num_nodes
@@ -263,16 +281,16 @@ class DynamicTree:
         # attention between tree tokens (note: skip root node)
         attn_mask[:, start_pos:start_pos + self.tree_size] = self.tree_mask[start_node_idx - 1:end_node_idx - 1, :]
 
-        print(f"self.num_nodes: {self.num_nodes}")
-        print(f"next_layer_num_nodes: {next_layer_num_nodes}")
-        print(f"start_pos: {start_pos}")
-        print(f"end_pos: {end_pos}")
+        # print(f"self.num_nodes: {self.num_nodes}")
+        # print(f"next_layer_num_nodes: {next_layer_num_nodes}")
+        # print(f"start_pos: {start_pos}")
+        # print(f"end_pos: {end_pos}")
 
-        print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
-        print(f"position_ids: {position_ids.unsqueeze(0)}")
-        print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
-        print(f"attn_mask: {attn_mask[None, None, :, :]}")
-        print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
+        # print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
+        # print(f"position_ids: {position_ids.unsqueeze(0)}")
+        # print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
+        # print(f"attn_mask: {attn_mask[None, None, :, :]}")
+        # print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
 
         draft_model_outputs = self.draft_model_engine.graph_inference(
             input_ids = self.tokens[start_pos:end_pos].unsqueeze(0),
@@ -280,14 +298,8 @@ class DynamicTree:
             attn_mask = attn_mask[None, None, :, :],
             storage_ids=self.storage_ids[start_pos:end_pos]
         )
-
-
-        print(f"draft_model_outputs.shape: {draft_model_outputs.shape}")
-        print(f"draft_model_outputs: {draft_model_outputs}")
-
+        
         self.draft_logits[start_node_idx:end_node_idx] = draft_model_outputs[...,-1,:]
-
-        print(self.draft_logits[1])
     
     # @torch.inference_mode()
     # def verify(self, benchmark = False):
