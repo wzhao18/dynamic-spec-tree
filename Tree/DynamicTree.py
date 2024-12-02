@@ -38,7 +38,6 @@ class DynamicTree(Tree):
         
         attn_mask = _make_causal_mask((1, len(prefix)), dtype=self.dtype, device=self.device)
 
-
         draft_model_outputs = self.draft_model_engine.inference(input_ids=self.tokens.unsqueeze(0), 
                             storage_ids=self.storage_ids[:len(prefix)], 
                             position_ids=position_ids.unsqueeze(0),
@@ -66,7 +65,7 @@ class DynamicTree(Tree):
 
         grow_step = 0
         while True:
-            # track old numblayers
+            # track old number of layers
             num_layers = len(self.node_indices)
 
             # grow tree by one layer
@@ -198,6 +197,9 @@ class DynamicTree(Tree):
                 # attend itself
                 self.tree_mask[child_node_idx][child_node_idx] = 0.
 
+        if not next_layer_node_indices:
+            return
+        
         self.node_indices.append(next_layer_node_indices)
         self.subtree_sizes.extend(next_layer_tree_sizes)
         self.layer_branches.append(layer_branch)
