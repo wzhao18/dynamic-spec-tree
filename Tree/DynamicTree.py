@@ -3,7 +3,7 @@ from torch.nn.functional import softmax
 from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
-from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement_dynamic, _make_causal_mask
+from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement, _make_causal_mask
 
 class DynamicTree:
     def __init__(self, 
@@ -28,6 +28,8 @@ class DynamicTree:
         self.dtype = torch.float16
 
         self.num_nodes = len(prefix)
+        print(f"prefix: {prefix}")
+        print(f"self.num_nodes: {self.num_nodes}")
 
         # generated + speculated tokens
         self.tokens = torch.zeros(max_length, device=device).long()
@@ -66,7 +68,19 @@ class DynamicTree:
             dtype=self.dtype,
             device=self.device
         )
-        self.tree_mask[0][0] = 0.
+
+        # for token sampling
+        self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
+
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+        prefix_string = self.decode_tokens(self.prefix)
+        print(f"prefix_string: {prefix_string}")
+
+    def decode_tokens(self, tokens):
+        _str = self.tokenizer.decode(tokens, skip_special_tokens=True)
+        return _str
 
     def construct_grow_map(self):
 
@@ -164,6 +178,8 @@ class DynamicTree:
         # take softmax of logits
         sampling_q = softmax(self.draft_logits[layer_node_indices] / self.temperature, dim=-1)
 
+        print(f"grow step {grow_step} layer tokens:")
+
         # iterate over each node and sample its children
         for i in range(len(layer_node_indices)):
 
@@ -172,10 +188,16 @@ class DynamicTree:
             num_descandents = subtree_size - 1
             logit = sampling_q[i]
 
+            print(f"num_descandents: {num_descandents}")
+
+            print(logit)
+
             if num_descandents > 0:
                 confidence_cutoff = 1 / num_descandents
             else:
                 confidence_cutoff = 100
+
+            print(f"confidence_cutoff: {confidence_cutoff}")
 
             mask = logit >= confidence_cutoff
             token_ids = torch.nonzero(mask, as_tuple=True)[0]
@@ -187,7 +209,7 @@ class DynamicTree:
             num_children = token_ids.size(0)
             layer_branch.append(num_children)
 
-            child_tree_sizes = torch.floor(scores).int().tolist()
+            child_tree_sizes = torch.floor(scores * num_descandents).int().tolist()
             next_layer_tree_sizes.extend(child_tree_sizes)
 
             last_node_idx = self.node_indices[-1][-1]
@@ -197,16 +219,20 @@ class DynamicTree:
             self.children.append(children_node_indices)
             self.depths.append(grow_step + 1)
 
+            for i in range(token_ids.size(0)):
+                print(f"\t{self.decode_tokens(token_ids[i])}")
+
             self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids
             self.num_nodes += num_children
 
             for child_node_idx in children_node_indices:
 
-                # inherit parent mask
-                self.tree_mask[child_node_idx] = self.tree_mask[node_idx]
+                if grow_step > 0:
+                    # inherit parent mask
+                    self.tree_mask[child_node_idx - 1] = self.tree_mask[node_idx - 1]
 
                 # attend itself
-                self.tree_mask[child_node_idx][child_node_idx] = 0.
+                self.tree_mask[child_node_idx - 1][child_node_idx - 1] = 0.
 
         if not next_layer_node_indices:
             return
@@ -221,7 +247,7 @@ class DynamicTree:
         start_node_idx = next_layer_node_indices[0]
         end_node_idx = next_layer_node_indices[-1] + 1
 
-        position_ids = torch.zeros(next_layer_num_nodes).long().to(self.device) + len(self.prefix) + grow_step - 1
+        position_ids = torch.zeros(next_layer_num_nodes).long().to(self.device) + len(self.prefix) + grow_step
         
         # initially all masked out (-inf)
         attn_mask = torch.full(
@@ -234,8 +260,19 @@ class DynamicTree:
         # attend to previous tokens
         attn_mask[:, :start_pos] = 0
 
-        # attention between tree tokens
-        attn_mask[:, start_pos:start_pos + self.tree_size] = self.tree_mask[start_node_idx:end_node_idx, :]
+        # attention between tree tokens (note: skip root node)
+        attn_mask[:, start_pos:start_pos + self.tree_size] = self.tree_mask[start_node_idx - 1:end_node_idx - 1, :]
+
+        print(f"self.num_nodes: {self.num_nodes}")
+        print(f"next_layer_num_nodes: {next_layer_num_nodes}")
+        print(f"start_pos: {start_pos}")
+        print(f"end_pos: {end_pos}")
+
+        print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
+        print(f"position_ids: {position_ids.unsqueeze(0)}")
+        print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
+        print(f"attn_mask: {attn_mask[None, None, :, :]}")
+        print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
 
         draft_model_outputs = self.draft_model_engine.graph_inference(
             input_ids = self.tokens[start_pos:end_pos].unsqueeze(0),
@@ -243,8 +280,14 @@ class DynamicTree:
             attn_mask = attn_mask[None, None, :, :],
             storage_ids=self.storage_ids[start_pos:end_pos]
         )
-        
-        self.draft_logits[start_node_idx:end_node_idx] = draft_model_outputs[0]
+
+
+        print(f"draft_model_outputs.shape: {draft_model_outputs.shape}")
+        print(f"draft_model_outputs: {draft_model_outputs}")
+
+        self.draft_logits[start_node_idx:end_node_idx] = draft_model_outputs[...,-1,:]
+
+        print(self.draft_logits[1])
     
     # @torch.inference_mode()
     # def verify(self, benchmark = False):

@@ -46,9 +46,9 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
 
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
-            input_ids = batch['input_ids'][..., :128]
-            labels = batch['labels'][..., :128]
-
+            input_ids = batch['input_ids'][..., :3]
+            labels = batch['labels'][..., :3]
+            
             terminate = False
             if labels[0][-1] == -100:
                 terminate = True
@@ -65,7 +65,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             )
             torch.cuda.synchronize()
             t1 = time.time()
-            while input_ids.shape[1] < 256 and terminate == False:
+            while input_ids.shape[1] < 12 and terminate == False:
                 
                 spectree.construct_grow_map()
                 exit(0)
