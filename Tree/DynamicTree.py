@@ -64,6 +64,8 @@ class DynamicTree:
 
         self.reset_tree()
 
+        self.r = torch.rand(self.max_length, dtype=self.dtype).to(self.device)
+
         # for token sampling
         self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
@@ -279,7 +281,6 @@ class DynamicTree:
         print(f"self.depths: {self.depths}")
         print(f"self.layer_branches: {self.layer_branches}")
 
-
         next_layer_num_nodes = len(next_layer_node_indices)
         start_pos = self.num_nodes - next_layer_num_nodes
         end_pos = self.num_nodes
@@ -325,11 +326,12 @@ class DynamicTree:
         self.draft_kv_len = self.num_nodes
     
     @torch.inference_mode()
-    def accept_step(self, logits_id):
+    def accept_step(self, parent_id):
+        logits_id = parent_id - (self.ground_truth_len - 1)
         p = self.target_logits[logits_id]
         draft_logits = self.draft_logits[logits_id]
         
-        children = self.Successors[logits_id]
+        children = self.children[logits_id]
         if len(children) == 0:
             return (-1, p)
         
@@ -414,20 +416,37 @@ class DynamicTree:
         
         self.target_logits = softmax(self.target_logits / self.temperature, dim=-1)
         
+        print("=================Target Logits===================")
+
+        # print top 5 tokens
+        for i in range(len(self.target_logits)):
+
+            sequence = self.node_id_to_seq[i]
+            print(f"Sequence: {self.decode_tokens(sequence)}")
+
+            top_scores, top_indices = torch.topk(self.target_logits[i], k=5)
+            for score, idx in zip(top_scores, top_indices):
+                print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
+
+            print()
+
+        print("=================Target Logits end===================")
+
         accept_list = list(range(self.ground_truth_len))
-        
+
         terminal = False
 
-        curr_idx = 0
         while True:
-            pos, res = self.accept_step(curr_idx)
+            parent_id = accept_list[-1]
+            pos, res = self.accept_step(parent_id)
             if pos != -1:
+                print(f"Accepted Token Index {pos}: `{self.decode_tokens(self.tokens[pos].unsqueeze(0))}`") 
                 accept_list.append(pos)
                 if self.tokens[pos] == 0 or self.tokens[pos] == 2:
                     terminal = True
                     break
-                curr_idx += 1
             else:
+                print("Rejected Token")
                 residual = res
                 break
 
@@ -437,6 +456,7 @@ class DynamicTree:
                 terminal = True
             else:
                 self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
+                print(f"Sampled bonus token: `{self.decode_tokens(self.tokens[accept_length].unsqueeze(0))}`")
 
         # accept_list is a list of position indices
         self.tokens[:accept_length] = self.tokens[accept_list]
@@ -451,14 +471,10 @@ class DynamicTree:
             return self.tokens[:accept_length], terminal
     
     def prepare_for_next_iter(self, accept_list: list[int], valid_tokens :torch.LongTensor):
-        if len(accept_list) + 1 > self.max_target_seq:
+        if len(accept_list) + 1 > self.max_length:
             return 
         
-        self.ground_truth = torch.concatenate([self.ground_truth, valid_tokens])
-
-        self.position_ids[:len(accept_list)] =  self.position_ids[accept_list]
-        self.position_ids[len(accept_list)] = len(accept_list) 
-        self.position_ids[len(valid_tokens) : len(valid_tokens) + self.tree_size - 1] = (self.depth + len(valid_tokens) - 1)
+        self.ground_truth = valid_tokens
         self.ground_truth_len = len(valid_tokens)
         self.num_nodes = len(valid_tokens)
 
