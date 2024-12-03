@@ -80,6 +80,8 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 spectree.construct_grow_map()
                 valid_tokens, terminate = spectree.verify()
 
+                exit(0)
+
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
                 num_large_model_steps += 1
                 input_ids = valid_tokens.unsqueeze(0)
