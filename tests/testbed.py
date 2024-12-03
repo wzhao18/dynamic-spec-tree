@@ -126,6 +126,9 @@ def simulation_baseline(target_model : GraphInferenceEngineTG, dataloader: DataL
             inner_decoding_step = 0
             start_length = 0
             while inner_decoding_step < 32 and terminate == False:
+
+                print(input_ids.shape)
+
                 if inner_decoding_step == 0:
                     start_length = input_ids.shape[1]
                     logits = target_model.inference(input_ids = input_ids, storage_ids=storage_ids[:start_length],
