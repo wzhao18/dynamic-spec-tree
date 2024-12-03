@@ -1,4 +1,5 @@
 import sys
+sys.path.append(".")
 sys.path.append("..")
 from transformers import DataCollatorForLanguageModeling, AutoTokenizer
 import torch
@@ -32,6 +33,14 @@ parser.add_argument('--seed', type=int, default=17, help='random seed')
 parser.add_argument('--Mode', type=str, default="greedy", help='tree mode')
 parser.add_argument('--offloading', action='store_true')
 args = parser.parse_args()
+
+args.model = 'JackFram/llama-68m'
+args.target = 'JackFram/llama-68m'
+args.T = 1
+args.P = 1
+args.M = 256
+args.dataset = 'cnn'
+
 
 print(args)
 def setup_seed(seed):
@@ -71,9 +80,8 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             while input_ids.shape[1] < 15 and terminate == False:
                 
                 spectree.construct_grow_map()
-                exit(0)
+                valid_tokens, terminate = spectree.verify()
 
-                valid_tokens = spectree.verify()
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
                 num_large_model_steps += 1
                 input_ids = valid_tokens.unsqueeze(0)

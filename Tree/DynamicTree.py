@@ -4,6 +4,7 @@ from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement, _make_causal_mask
+from transformers import AutoTokenizer
 
 class DynamicTree:
     def __init__(self, 
@@ -28,6 +29,9 @@ class DynamicTree:
         self.dtype = torch.float16
 
         self.num_nodes = len(prefix)
+        self.ground_truth_len = len(prefix)
+        self.ground_truth = prefix
+
         print(f"prefix: {prefix}")
         print(f"self.num_nodes: {self.num_nodes}")
 
@@ -55,9 +59,20 @@ class DynamicTree:
         self.draft_logits = torch.zeros((self.max_length, vocab_size), dtype=self.dtype).to(self.device)
         self.draft_logits[0] = draft_model_outputs[...,-1,:][0]
 
-        debug = True
-        if debug:
-            self.node_id_to_seq = {0: prefix}
+        self.draft_kv_len = self.num_nodes
+        self.target_kv_len = 0
+
+        self.reset_tree()
+
+        # for token sampling
+        self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
+        self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+        prefix_string = self.decode_tokens(self.prefix)
+        print(f"prefix_string: {prefix_string}")
+
+    def reset_tree(self):
+        self.node_id_to_seq = {0: self.ground_truth}
 
         # token tree
         self.node_indices = [[0]]
@@ -72,15 +87,6 @@ class DynamicTree:
             dtype=self.dtype,
             device=self.device
         )
-
-        # for token sampling
-        self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
-
-        from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-
-        prefix_string = self.decode_tokens(self.prefix)
-        print(f"prefix_string: {prefix_string}")
 
     def decode_tokens(self, tokens):
         _str = self.tokenizer.decode(tokens, skip_special_tokens=True)
@@ -232,14 +238,13 @@ class DynamicTree:
             else:
                 last_node_idx = self.node_indices[-1][-1]
 
-            children_node_indices = range(last_node_idx + 1, last_node_idx + 1 + num_children)
+            children_node_indices = list(range(last_node_idx + 1, last_node_idx + 1 + num_children))
 
             for i in range(num_children):
                 self.node_id_to_seq[children_node_indices[i]] = torch.cat([self.node_id_to_seq[node_idx], token_ids[i].unsqueeze(0)])
 
             next_layer_node_indices.extend(children_node_indices)
             self.children.append(children_node_indices)
-            self.depths.append(grow_step + 1)
 
             for i in range(token_ids.size(0)):
                 print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
@@ -256,6 +261,8 @@ class DynamicTree:
                 # attend itself
                 self.tree_mask[child_node_idx - 1][child_node_idx - 1] = 0.
 
+                self.depths.append(grow_step + 1)
+
             print("=========================================")
             print()
 
@@ -268,6 +275,10 @@ class DynamicTree:
         
         print(f"self.node_indices: {self.node_indices}")
         print(f"self.subtree_sizes: {self.subtree_sizes}")
+        print(f"self.children: {self.children}")
+        print(f"self.depths: {self.depths}")
+        print(f"self.layer_branches: {self.layer_branches}")
+
 
         next_layer_num_nodes = len(next_layer_node_indices)
         start_pos = self.num_nodes - next_layer_num_nodes
@@ -275,7 +286,7 @@ class DynamicTree:
         start_node_idx = next_layer_node_indices[0]
         end_node_idx = next_layer_node_indices[-1] + 1
 
-        position_ids = torch.zeros(next_layer_num_nodes).long().to(self.device) + len(self.prefix) + grow_step
+        position_ids = torch.zeros(next_layer_num_nodes).long().to(self.device) + self.ground_truth_len + grow_step
         
         # initially all masked out (-inf)
         attn_mask = torch.full(
@@ -310,91 +321,158 @@ class DynamicTree:
         )
 
         self.draft_logits[start_node_idx:end_node_idx] = draft_model_outputs
+
+        self.draft_kv_len = self.num_nodes
     
-    # @torch.inference_mode()
-    # def verify(self, benchmark = False):
-    #     new_node_num = (self.num_nodes - self.ground_truth_len + 1)
-    #     if self.target_kv_len == 0:
-    #         start_pos = 0
-    #         end_pos = self.num_nodes
-    #         attn_mask = self.attn_mask[start_pos: end_pos, :end_pos]
-    #         attn_mask = attn_mask[None, None, :, :].type(self.target_model_engine.dtype)
-    #         if benchmark:
-    #             torch.cuda.synchronize()
-    #             t1 = time.time()
-    #         target_model_outputs = self.target_model_engine.inference(input_ids = self.tokens[start_pos : end_pos].unsqueeze(0), 
-    #                                 position_ids = self.position_ids[start_pos : end_pos].unsqueeze(0), attn_mask = attn_mask, 
-    #                                 storage_ids=self.storage_ids[start_pos : end_pos])
-    #         if benchmark:
-    #             torch.cuda.synchronize()
-    #             t2 = time.time()
-    #         self.target_logits :torch.FloatTensor= target_model_outputs[0][self.ground_truth_len - 1:]
+    @torch.inference_mode()
+    def accept_step(self, logits_id):
+        p = self.target_logits[logits_id]
+        draft_logits = self.draft_logits[logits_id]
+        
+        children = self.Successors[logits_id]
+        if len(children) == 0:
+            return (-1, p)
+        
+        for idx, pos in enumerate(children):
+
+            token = self.tokens[pos + (self.ground_truth_len - 1)]
+            q = softmax(draft_logits / self.temperature, dim=-1)
+            r = self.r[pos + (self.ground_truth_len - 1)]
             
-    #     else:
-    #         start_pos = self.target_kv_len
-    #         end_pos = self.num_nodes
-    #         attn_mask = self.attn_mask[start_pos: end_pos, :end_pos]
-    #         attn_mask = attn_mask[None, None, :, :].type(self.target_model_engine.dtype)
-    #         if benchmark:
-    #             torch.cuda.synchronize()
-    #             t1 = time.time()
-    #         target_model_outputs = self.target_model_engine.inference(input_ids = self.tokens[start_pos : end_pos].unsqueeze(0), 
-    #                                     position_ids =self.position_ids[start_pos : end_pos].unsqueeze(0), attn_mask = attn_mask,
-    #                                     storage_ids=self.storage_ids[start_pos : end_pos])
-    #         if benchmark:
-    #             torch.cuda.synchronize()
-    #             t2 = time.time()
-    #         self.target_logits :torch.FloatTensor = target_model_outputs[0][-(new_node_num):]
-        
-    #     assert len(self.target_logits) == (self.num_nodes - self.ground_truth_len + 1)
+            if p[token] > r * q[token]:
+                # self.accept_idx_map[idx] += 1
+                return (pos + (self.ground_truth_len - 1), None)
+                # return (-1, p)
+            else:
+                p = self.residual_graph(p, q)
+                draft_logits[token] = torch.finfo(self.dtype).min
+        # self.accept_idx_map[-1] += 1
+        return (-1, p)
 
-    #     self.target_logits = get_sampling_logits(logits=self.target_logits, top_p=self.top_p, T=self.temperature, replicate=False)
-        
-    #     self.target_logits = softmax(self.target_logits / self.temperature, dim=-1)
-        
-    #     accept_list = self.seq_to_use[:self.ground_truth_len]
-        
-    #     terminal = False
-    #     # Recursively check if any children will be accepted
-    #     # pos is the accepted position, res is the residual probability if no position is accepted (used to randomly sample)
-    #     while True:
-    #         parent_id = accept_list[-1]
-    #         pos, res = self.accept_step(parent_id=parent_id)
-    #         if pos != -1:
-    #             accept_list.append(pos)
-    #             if self.tokens[pos] == 0 or self.tokens[pos] == 2:
-    #                  terminal = True
-    #                  break
-    #         else:
-    #             residual = res
-    #             break
-    #     if benchmark:
-    #         torch.cuda.synchronize()
-    #         t3 = time.time()
-    #     accept_length = len(accept_list)
-    #     if not terminal:
-    #         if torch.isnan(residual).any():
-    #              terminal = True
-    #         else:
-    #             self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
+    @torch.inference_mode()
+    def verify(self):
+        new_node_num = self.num_nodes - self.ground_truth_len
 
-    #     # accept_list is a list of position indices
-    #     self.tokens[:accept_length] = self.tokens[accept_list]
+        if self.target_kv_len == 0:
+            start_pos = 0
+            end_pos = self.num_nodes
 
-    #     self.draft_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
-    #     self.target_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
+            attn_mask = torch.full(
+                (self.num_nodes, self.num_nodes),
+                fill_value=torch.finfo(self.dtype).min,
+                dtype=self.dtype,
+                device=self.device
+            )
 
-    #     if not terminal:
-    #         if benchmark:
-    #             torch.cuda.synchronize()
-    #             t4 = time.time()
-    #             self.prepare_for_next_iter(accept_list, self.tokens[:accept_length+1])
-    #             return self.tokens[:accept_length+1], accept_length, accept_length, t2 - t1, t3-t2, t4 - t3, terminal
-    #         self.prepare_for_next_iter(accept_list, self.tokens[:accept_length+1])
-    #         return self.tokens[:accept_length+1], accept_length, accept_length, terminal
-    #     else:
-    #          if benchmark:
-    #             torch.cuda.synchronize()
-    #             t4 = time.time()
-    #             return self.tokens[:accept_length], accept_length, accept_length, t2 - t1, t3-t2, t4 - t3, terminal
-    #          return self.tokens[:accept_length], accept_length, accept_length, terminal
+            # prefix causal mask
+            attn_mask[:self.ground_truth_len, :self.ground_truth_len] = _make_causal_mask((1, self.ground_truth_len), dtype=self.dtype, device=self.device)
+
+            # attend to previous tokens
+            attn_mask[self.ground_truth_len:self.num_nodes, :self.ground_truth_len] = 0
+
+            # attention between tree tokens (note: skip root node)
+            attn_mask[self.ground_truth_len:self.num_nodes, self.ground_truth_len:self.num_nodes] = self.tree_mask[:new_node_num, :new_node_num]
+
+            position_ids = torch.arange(self.num_nodes).to(self.device)
+            position_ids[len(self.prefix) : self.num_nodes] = (torch.tensor(self.depths[1:]).to(self.device) + len(self.prefix) - 1)
+
+            target_model_outputs = self.target_model_engine.inference(
+                                        input_ids=self.tokens[start_pos:end_pos].unsqueeze(0), 
+                                        position_ids = position_ids.unsqueeze(0),
+                                        attn_mask=attn_mask[None, None, :, :], 
+                                        storage_ids=self.storage_ids[start_pos:end_pos]
+                                    )
+            self.target_logits :torch.FloatTensor= target_model_outputs[0][self.ground_truth_len - 1:]
+            
+        else:
+            start_pos = self.target_kv_len
+            end_pos = self.num_nodes
+            
+            attn_mask = torch.full(
+                (new_node_num, self.num_nodes),
+                fill_value=torch.finfo(self.dtype).min,
+                dtype=self.dtype,
+                device=self.device
+            )
+
+            # attend to previous tokens
+            attn_mask[:, :self.target_kv_len] = 0
+
+            # attention between tree tokens (note: skip root node)
+            attn_mask[self.target_kv_len:self.num_nodes, self.target_kv_len:self.num_nodes] = self.tree_mask[:new_node_num - 1, :]
+
+            target_model_outputs = self.target_model_engine.inference(
+                                        input_ids = self.tokens[start_pos : end_pos].unsqueeze(0), 
+                                        position_ids =self.position_ids[start_pos : end_pos].unsqueeze(0),
+                                        attn_mask = attn_mask[None, None, :, :],
+                                        storage_ids=self.storage_ids[start_pos : end_pos])
+            self.target_logits :torch.FloatTensor = target_model_outputs[0][self.ground_truth_len - 1:]
+        
+        assert len(self.target_logits) == (self.num_nodes - self.ground_truth_len + 1)
+
+        self.target_logits = get_sampling_logits(logits=self.target_logits, top_p=self.top_p, T=self.temperature, replicate=False)
+        
+        self.target_logits = softmax(self.target_logits / self.temperature, dim=-1)
+        
+        accept_list = list(range(self.ground_truth_len))
+        
+        terminal = False
+
+        curr_idx = 0
+        while True:
+            pos, res = self.accept_step(curr_idx)
+            if pos != -1:
+                accept_list.append(pos)
+                if self.tokens[pos] == 0 or self.tokens[pos] == 2:
+                    terminal = True
+                    break
+                curr_idx += 1
+            else:
+                residual = res
+                break
+
+        accept_length = len(accept_list)
+        if not terminal:
+            if torch.isnan(residual).any():
+                terminal = True
+            else:
+                self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
+
+        # accept_list is a list of position indices
+        self.tokens[:accept_length] = self.tokens[accept_list]
+
+        self.draft_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
+        self.target_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
+
+        if not terminal:
+            self.prepare_for_next_iter(accept_list, self.tokens[:accept_length+1])
+            return self.tokens[:accept_length+1], terminal
+        else:
+            return self.tokens[:accept_length], terminal
+    
+    def prepare_for_next_iter(self, accept_list: list[int], valid_tokens :torch.LongTensor):
+        if len(accept_list) + 1 > self.max_target_seq:
+            return 
+        
+        self.ground_truth = torch.concatenate([self.ground_truth, valid_tokens])
+
+        self.position_ids[:len(accept_list)] =  self.position_ids[accept_list]
+        self.position_ids[len(accept_list)] = len(accept_list) 
+        self.position_ids[len(valid_tokens) : len(valid_tokens) + self.tree_size - 1] = (self.depth + len(valid_tokens) - 1)
+        self.ground_truth_len = len(valid_tokens)
+        self.num_nodes = len(valid_tokens)
+
+        total_nodes = len(valid_tokens) + self.tree_size - 1
+        self.attn_mask = self.full_attn_mask[self.max_length - total_nodes: 2 * self.max_length - total_nodes, self.max_length - total_nodes: 2 * self.max_length - total_nodes]
+
+        draft_model_outputs = self.draft_model_engine.graph_inference(
+                                    input_ids = self.tokens[len(accept_list): self.num_nodes].unsqueeze(0), 
+                                    storage_ids=self.storage_ids[len(accept_list): self.num_nodes],
+                                    position_ids=self.position_ids[len(accept_list): self.num_nodes].unsqueeze(0),
+                                    attn_mask=self.attn_mask[len(accept_list): self.num_nodes][None, None, :, :])
+        
+        self.draft_logits[0] = draft_model_outputs[...,-1,:][0]
+        self.draft_kv_len = self.num_nodes
+        self.target_kv_len = len(accept_list)
+
+        self.reset_tree()
