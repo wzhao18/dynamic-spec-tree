@@ -3,7 +3,7 @@ from torch.nn.functional import softmax
 from .Tree import Tree
 import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
-from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement, _make_causal_mask
+from utils import get_sampling_logits, ChildrenAccept, get_residual, sampling_without_replacement, _make_causal_mask, get_residual
 from transformers import AutoTokenizer
 
 class DynamicTree:
@@ -254,6 +254,8 @@ class DynamicTree:
             self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids
             self.num_nodes += num_children
 
+            print(f"self.num_nodes: {self.num_nodes}")
+
             for child_node_idx in children_node_indices:
 
                 if grow_step > 0:
@@ -353,16 +355,16 @@ class DynamicTree:
                 return (pos + (self.ground_truth_len - 1), None)
                 # return (-1, p)
             else:
-                p = self.residual_graph(p, q)
+                p = get_residual(p, q)
                 draft_logits[token] = torch.finfo(self.dtype).min
         # self.accept_idx_map[-1] += 1
         return (-1, p)
 
     @torch.inference_mode()
     def verify(self):
-        new_node_num = self.num_nodes - self.ground_truth_len
 
         if self.target_kv_len == 0:
+            new_node_num = self.num_nodes - self.ground_truth_len
             start_pos = 0
             end_pos = self.num_nodes
 
@@ -394,9 +396,10 @@ class DynamicTree:
             self.target_logits :torch.FloatTensor= target_model_outputs[0][self.ground_truth_len - 1:]
             
         else:
+            new_node_num = self.num_nodes - self.target_kv_len
             start_pos = self.target_kv_len
             end_pos = self.num_nodes
-            
+
             attn_mask = torch.full(
                 (new_node_num, self.num_nodes),
                 fill_value=torch.finfo(self.dtype).min,
@@ -407,16 +410,27 @@ class DynamicTree:
             # attend to previous tokens
             attn_mask[:, :self.target_kv_len] = 0
 
-            # attention between tree tokens (note: skip root node)
-            attn_mask[self.target_kv_len:self.num_nodes, self.target_kv_len:self.num_nodes] = self.tree_mask[:new_node_num - 1, :]
+            # first token should attend itself (not speculated)
+            attn_mask[0, self.target_kv_len] = 0
+
+            # attention between speculated tree tokens
+            attn_mask[1:, self.target_kv_len + 1:self.num_nodes] = self.tree_mask[:new_node_num - 1, :new_node_num - 1]
+
+            position_ids = torch.zeros(new_node_num, dtype=torch.long).to(self.device)
+
+            position_ids[0] = torch.tensor([self.target_kv_len]).to(self.device)
+            position_ids[1 : self.num_nodes] = (torch.tensor(self.depths[1:]).to(self.device) + self.target_kv_len - 1)
 
             target_model_outputs = self.target_model_engine.inference(
                                         input_ids = self.tokens[start_pos : end_pos].unsqueeze(0), 
-                                        position_ids =self.position_ids[start_pos : end_pos].unsqueeze(0),
+                                        position_ids = position_ids.unsqueeze(0),
                                         attn_mask = attn_mask[None, None, :, :],
                                         storage_ids=self.storage_ids[start_pos : end_pos])
-            self.target_logits :torch.FloatTensor = target_model_outputs[0][self.ground_truth_len - 1:]
+            self.target_logits :torch.FloatTensor = target_model_outputs[0]
         
+        print(f"len(self.target_logits): {len(self.target_logits)}")
+        print(f"self.ground_truth_len: {self.ground_truth_len}")
+
         assert len(self.target_logits) == (self.num_nodes - self.ground_truth_len + 1)
 
         self.target_logits = get_sampling_logits(logits=self.target_logits, top_p=self.top_p, T=self.temperature, replicate=False)
@@ -438,6 +452,7 @@ class DynamicTree:
             print()
 
         print("=================Target Logits end===================")
+        print()
 
         accept_list = list(range(self.ground_truth_len))
 
@@ -506,6 +521,8 @@ class DynamicTree:
         self.draft_kv_len = len(valid_tokens)
         self.target_kv_len = accept_length
 
+        print(f"self.target_kv_len: {self.target_kv_len}")
+
         self.reset_tree()
 
         print("=================Draft Bonus Logit===================")
@@ -515,5 +532,5 @@ class DynamicTree:
         for score, idx in zip(top_scores, top_indices):
             print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
 
-        print()
         print("=================Draft Bonus Logit End===================")
+        print()
