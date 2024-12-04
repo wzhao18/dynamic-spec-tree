@@ -269,6 +269,13 @@ class DynamicTree:
             print()
 
         if not next_layer_node_indices:
+
+            print(f"self.node_indices: {self.node_indices}")
+            print(f"self.subtree_sizes: {self.subtree_sizes}")
+            print(f"self.children: {self.children}")
+            print(f"self.depths: {self.depths}")
+            print(f"self.layer_branches: {self.layer_branches}")
+
             return
         
         self.node_indices.append(next_layer_node_indices)
@@ -485,36 +492,26 @@ class DynamicTree:
             dtype=self.dtype,
             device=self.device
         )
-        attn_mask[:len(valid_tokens)] = 0
+        attn_mask[0, :len(valid_tokens)] = 0
 
         accept_length = len(accept_list)
 
-        print(f"valid_tokens: {valid_tokens}")
-        print(f"self.tokens[:accept_length+1]: {self.tokens[:accept_length+1]}")
-
-        print(f"input_ids: {self.tokens[len(valid_tokens)].unsqueeze(0)}")
-        print(f"storage_ids: {self.storage_ids[len(valid_tokens)]}")
-        print(f"position_ids: {torch.tensor([len(valid_tokens)], device=self.device).unsqueeze(0)}")
-        print(f"attn_mask: {attn_mask[None, None, :, :]}")
-
         draft_model_outputs = self.draft_model_engine.graph_inference(
-                                    input_ids = self.tokens[len(valid_tokens)].unsqueeze(0), 
-                                    storage_ids=self.storage_ids[len(valid_tokens)],
-                                    position_ids=torch.tensor([len(valid_tokens)], device=self.device).unsqueeze(0),
+                                    input_ids = self.tokens[accept_length].unsqueeze(0).unsqueeze(0), 
+                                    storage_ids=self.storage_ids[accept_length].unsqueeze(0),
+                                    position_ids=torch.tensor([accept_length], device=self.device).unsqueeze(0),
                                     attn_mask=attn_mask[None, None, :, :])
 
-        print(f"draft_model_outputs.shape: {draft_model_outputs.shape}")
-
         self.draft_logits[0] = draft_model_outputs[0]
-        self.draft_kv_len = len(valid_tokens) + 1
-        self.target_kv_len = len(valid_tokens)
+        self.draft_kv_len = len(valid_tokens)
+        self.target_kv_len = accept_length
 
         self.reset_tree()
 
         print("=================Draft Bonus Logit===================")
         print(f"Sequence: {self.decode_tokens(valid_tokens)}")
 
-        top_scores, top_indices = torch.topk(self.draft_logits[0], k=5)
+        top_scores, top_indices = torch.topk(softmax(self.draft_logits[0] / self.temperature, dim=-1), k=5)
         for score, idx in zip(top_scores, top_indices):
             print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
 

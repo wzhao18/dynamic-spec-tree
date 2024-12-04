@@ -36,7 +36,7 @@ args = parser.parse_args()
 
 args.model = 'JackFram/llama-68m'
 args.target = 'JackFram/llama-68m'
-args.T = 1
+args.T = 0.5
 args.P = 1
 args.M = 256
 args.dataset = 'cnn'
@@ -52,6 +52,10 @@ def setup_seed(seed):
 setup_seed(args.seed)
 
 def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9, max_length=512):
+
+    num_decoding_steps = 0
+    num_large_model_steps = 0
+    total_time = 0
 
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
@@ -79,8 +83,6 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 
                 spectree.construct_grow_map()
                 valid_tokens, terminate = spectree.verify()
-
-                exit(0)
 
                 num_decoding_steps += (valid_tokens.shape[0] - input_ids.shape[1])
                 num_large_model_steps += 1
