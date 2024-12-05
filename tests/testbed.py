@@ -24,7 +24,7 @@ parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
 parser.add_argument('--growmap', type=str, help='growmap path')
 # parser.add_argument('--tree_size', type=int, default=32)
 parser.add_argument('--start', type=int, default=0, help='start')
-parser.add_argument('--end', type=int, default=200, help='end')
+parser.add_argument('--end', type=int, default=100, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
 parser.add_argument('--P', type=float, default=0.9, help='top_p')
 parser.add_argument('--M', type=int, default=256, help='max length')
@@ -40,18 +40,6 @@ def setup_seed(seed):
      random.seed(seed)
      torch.backends.cudnn.deterministic = True
 setup_seed(args.seed)
-
-
-args.model = 'JackFram/llama-68m'
-args.target = 'meta-llama/Llama-2-7b-hf'
-args.T = 0.6
-args.P = 0.9
-args.M = 512
-args.dataset = 'cnn'
-args.start = 0
-args.end = 100
-args.growmap =  "../L4_growmaps/6x64-384-64-stochastic.pt"
-args.Mode = "greedy"
 
 def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9,
             max_length=512, residual_graph=None, grow_map=None, sampling_callables = None,
@@ -110,7 +98,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 if (input_ids[0][-1] == 2) or (input_ids[0][-1] == 0): terminate = True
             
             # Print the model final output
-            print(spectree.decode_tokens(input_ids[0]))
+            # print(spectree.decode_tokens(input_ids[0]))
             
             torch.cuda.synchronize()
             t2 = time.time()

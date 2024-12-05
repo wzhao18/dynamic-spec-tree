@@ -26,7 +26,7 @@ parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
 parser.add_argument('--tree_size', type=int, default=64)
 parser.add_argument('--scaling_factor', type=float, default=1.0)
 parser.add_argument('--start', type=int, default=0, help='start')
-parser.add_argument('--end', type=int, default=200, help='end')
+parser.add_argument('--end', type=int, default=100, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
 parser.add_argument('--draft_T', type=float, default=0.6, help='draft temperature')
 parser.add_argument('--P', type=float, default=0.9, help='top_p')
@@ -35,18 +35,6 @@ parser.add_argument('--seed', type=int, default=17, help='random seed')
 parser.add_argument('--Mode', type=str, default="greedy", help='tree mode')
 parser.add_argument('--offloading', action='store_true')
 args = parser.parse_args()
-
-args.model = 'JackFram/llama-68m'
-args.target = 'meta-llama/Llama-2-7b-hf'
-args.T = 0.6
-# args.draft_T = 0.6
-args.P = 0.9
-args.M = 512
-args.dataset = 'cnn'
-args.start = 0
-args.end = 10
-args.scaling_factor = 1.0
-
 
 print(args)
 def setup_seed(seed):
@@ -98,7 +86,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 if (input_ids[0][-1] == 2) or (input_ids[0][-1] == 0):
                     terminate = True
 
-            print(f"Sentence: {spectree.decode_tokens(input_ids[0])}")
+            # print(f"Sentence: {spectree.decode_tokens(input_ids[0])}")
 
             torch.cuda.synchronize()
             t2 = time.time()
