@@ -62,7 +62,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
             # input_ids = batch['input_ids'][..., :10]
-            input_ids = tokenizer.encode("The tree is", return_tensors='pt').to('cuda:0')
+            input_ids = tokenizer.encode("The future of AI is really not promising because", return_tensors='pt').to('cuda:0')
             labels = batch['labels'][..., :10]
 
             terminate = False

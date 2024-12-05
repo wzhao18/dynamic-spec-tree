@@ -412,10 +412,7 @@ class DynamicTree:
             )
 
             # attend to previous tokens
-            attn_mask[:, :self.target_kv_len] = 0
-
-            # first token should attend itself (not speculated)
-            attn_mask[0, self.target_kv_len] = 0
+            attn_mask[:, :self.target_kv_len + 1] = 0
 
             # attention between speculated tree tokens
             attn_mask[1:, self.target_kv_len + 1:self.num_nodes] = self.tree_mask[:new_node_num - 1, :new_node_num - 1]
