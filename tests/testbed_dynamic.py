@@ -38,10 +38,10 @@ args = parser.parse_args()
 args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
 args.T = 0.5
-args.draft_T = 0.7
+args.draft_T = 1.0
 args.P = 1
 args.M = 512
-args.dataset = 'cnn'
+args.dataset = 'wiki'
 args.start = 0
 args.end = 10
 
@@ -55,7 +55,7 @@ def setup_seed(seed):
      torch.backends.cudnn.deterministic = True
 setup_seed(args.seed)
 
-def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9, max_length=512):
+def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, T_draft=0.6, top_p=0.9, max_length=512):
 
     num_decoding_steps = 0
     num_large_model_steps = 0
@@ -75,6 +75,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 target_model,
                 prefix=input_ids.squeeze(0),
                 temperature=T,
+                draft_temperature=T_draft,
                 top_p=top_p,
                 max_length=max_length,
                 device='cuda:0',
@@ -136,6 +137,7 @@ simulation_fast(
     draft_model=draft_model,
     dataloader=dataloader,
     T=args.T,
+    T_draft=args.draft_T,
     top_p=args.P,
     max_length=args.M
 )
