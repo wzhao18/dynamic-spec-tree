@@ -83,7 +83,6 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 device='cuda:0',
                 tree_size=args.tree_size,
                 scaling_factor=args.scaling_factor,
-                draft_temperature=args.draft_T
             )
             torch.cuda.synchronize()
             t1 = time.time()
