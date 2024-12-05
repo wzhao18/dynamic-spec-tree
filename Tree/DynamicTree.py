@@ -17,7 +17,8 @@ class DynamicTree:
                  max_length = 256,
                  device :str = 'cpu',
                  vocab_size = 32000,
-                 tree_size = 64):
+                 tree_size = 64,
+                 scaling_factor = 1.0):
         self.draft_model_engine = draft_model_engine
         self.target_model_engine = target_model_engine
         self.prefix = prefix
@@ -29,6 +30,7 @@ class DynamicTree:
         self.vocab_size = vocab_size
         self.tree_size = tree_size
         self.dtype = torch.float16
+        self.scaling_factor = scaling_factor
 
         self.num_nodes = len(prefix)
         self.ground_truth_len = len(prefix)
@@ -236,7 +238,7 @@ class DynamicTree:
 
             while remain_quota > 0:
                 score = scores[curr_idx]
-                child_tree_size = max(min(torch.ceil(score * num_descandents).int().item(), remain_quota), 1)
+                child_tree_size = max(min(torch.ceil(score * num_descandents * self.scaling_factor).int().item(), remain_quota), 1)
                 child_tree_sizes.append(child_tree_size)
 
                 num_children += 1

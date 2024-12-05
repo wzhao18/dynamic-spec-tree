@@ -44,12 +44,12 @@ setup_seed(args.seed)
 
 args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
-args.T = 0.5
-args.P = 1
+args.T = 0.6
+args.P = 0.9
 args.M = 512
-args.dataset = 'wiki'
+args.dataset = 'cnn'
 args.start = 0
-args.end = 10
+args.end = 100
 args.growmap =  "../L4_growmaps/6x64-384-64-stochastic.pt"
 args.Mode = "greedy"
 

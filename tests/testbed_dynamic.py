@@ -24,6 +24,7 @@ parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='mod
 parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
 parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
 parser.add_argument('--tree_size', type=int, default=64)
+parser.add_argument('--scaling_factor', type=float, default=1.0)
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
@@ -37,13 +38,14 @@ args = parser.parse_args()
 
 args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
-args.T = 0.5
-args.draft_T = 1.0
-args.P = 1
+args.T = 0.6
+# args.draft_T = 0.6
+args.P = 0.9
 args.M = 512
-args.dataset = 'wiki'
+args.dataset = 'cnn'
 args.start = 0
-args.end = 10
+args.end = 100
+args.scaling_factor = 1.0
 
 
 print(args)
@@ -79,7 +81,9 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 top_p=top_p,
                 max_length=max_length,
                 device='cuda:0',
-                tree_size=args.tree_size
+                tree_size=args.tree_size,
+                scaling_factor=args.scaling_factor,
+                draft_temperature=args.draft_T
             )
             torch.cuda.synchronize()
             t1 = time.time()
@@ -127,7 +131,10 @@ data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 dataloader = DataLoader(tokenized_dataset_eval, batch_size=1, collate_fn=data_collator, shuffle=False)
 
 draft_model = GraphInferenceEngine(max_length=args.M, model_name_or_path = args.model, dtype = torch.float16, device="cuda:0")
-target_model =  GraphInferenceEngineTG(max_length=args.M, model_name_or_path = args.target, dtype = torch.float16, device="cuda:0")
+if args.offloading:
+    target_model = OffloadEngine(max_length=args.M, model_name_or_path = args.target, dtype = torch.float16, device="cuda:0")
+else:
+    target_model =  GraphInferenceEngineTG(max_length=args.M, model_name_or_path = args.target, dtype = torch.float16, device="cuda:0")
 
 accelerator = Accelerator()
 dataloader = accelerator.prepare(dataloader)
