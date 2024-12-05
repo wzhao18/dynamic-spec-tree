@@ -16,7 +16,7 @@ class DynamicTree:
                  max_length = 256,
                  device :str = 'cpu',
                  vocab_size = 32000,
-                 tree_size = 32):
+                 tree_size = 64):
         self.draft_model_engine = draft_model_engine
         self.target_model_engine = target_model_engine
         self.prefix = prefix
@@ -201,7 +201,16 @@ class DynamicTree:
             print(f"node_idx: {node_idx}")
 
             subtree_size = self.subtree_sizes[node_idx]
-            num_descandents = subtree_size - 1
+            if grow_step == 0:
+                num_descandents = subtree_size
+            else:
+                num_descandents = subtree_size - 1
+
+            if num_descandents <= 0:
+                layer_branch.append(0)
+                self.children.append([])
+                continue
+
             logit = sampling_q[i]
 
             top_scores, top_indices = torch.topk(logit, k=5)
@@ -215,24 +224,40 @@ class DynamicTree:
 
             print(f"num_descandents: {num_descandents}")
 
-            if num_descandents > 0:
-                confidence_cutoff = 1 / num_descandents
-            else:
-                confidence_cutoff = 100
+            scores, sorted_indices = torch.topk(logit, k=num_descandents)
+            token_ids = sorted_indices
 
-            print(f"confidence_cutoff: {confidence_cutoff}")
+            remain_quota = num_descandents
+            curr_idx = 0
+            num_children = 0
+            child_tree_sizes = []
 
-            mask = logit >= confidence_cutoff
-            token_ids = torch.nonzero(mask, as_tuple=True)[0]
+            while remain_quota > 0:
+                score = scores[curr_idx]
+                child_tree_size = max(min(torch.ceil(score * num_descandents).int().item(), remain_quota), 1)
+                child_tree_sizes.append(child_tree_size)
 
-            scores = logit[mask]
-            scores, sorted_indices = torch.sort(scores, descending=True)
-            token_ids = token_ids[sorted_indices]
+                num_children += 1
+                remain_quota -= child_tree_size
 
-            num_children = token_ids.size(0)
+            # if num_descandents > 0:
+            #     confidence_cutoff = 1 / num_descandents
+            # else:
+            #     confidence_cutoff = 100
+
+            # print(f"confidence_cutoff: {confidence_cutoff}")
+
+            # mask = logit >= confidence_cutoff
+            # token_ids = torch.nonzero(mask, as_tuple=True)[0]
+
+            # scores = logit[mask]
+            # scores, sorted_indices = torch.sort(scores, descending=True)
+            # token_ids = token_ids[sorted_indices]
+
+            # num_children = token_ids.size(0)
             layer_branch.append(num_children)
 
-            child_tree_sizes = torch.floor(scores * num_descandents).int().tolist()
+            # child_tree_sizes = torch.floor(scores * num_descandents).int().tolist()
             next_layer_tree_sizes.extend(child_tree_sizes)
 
             if next_layer_node_indices:
@@ -248,10 +273,10 @@ class DynamicTree:
             next_layer_node_indices.extend(children_node_indices)
             self.children.append(children_node_indices)
 
-            for i in range(token_ids.size(0)):
+            for i in range(num_children):
                 print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
 
-            self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids
+            self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids[:num_children]
             self.num_nodes += num_children
 
             print(f"self.num_nodes: {self.num_nodes}")

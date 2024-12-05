@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='JackFram/llama-68m', help='model')
 parser.add_argument('--target', type=str, default='meta-llama/Llama-2-7b-hf', help='target model')
 parser.add_argument('--dataset', type=str, default="cnn", help='dataset path')
-parser.add_argument('--tree_size', type=int, default=32)
+parser.add_argument('--tree_size', type=int, default=64)
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
@@ -38,10 +38,10 @@ args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
 args.T = 0.1
 args.P = 1
-args.M = 256
+args.M = 512
 args.dataset = 'cnn'
 args.start = 0
-args.end = 5
+args.end = 10
 
 
 print(args)
@@ -80,7 +80,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             )
             torch.cuda.synchronize()
             t1 = time.time()
-            while input_ids.shape[1] < 200 and terminate == False:
+            while input_ids.shape[1] < 256 and terminate == False:
                 
                 spectree.construct_grow_map()
                 valid_tokens, terminate = spectree.verify()

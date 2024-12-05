@@ -42,6 +42,16 @@ def setup_seed(seed):
 setup_seed(args.seed)
 
 
+args.model = 'JackFram/llama-68m'
+args.target = 'meta-llama/Llama-2-7b-hf'
+args.T = 0.1
+args.P = 1
+args.M = 512
+args.dataset = 'cnn'
+args.start = 0
+args.end = 10
+args.growmap =  "../L4_growmaps/6x64-384-64-stochastic.pt"
+args.Mode = "greedy"
 
 def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInferenceEngine, dataloader: DataLoader, T=0.6, top_p=0.9,
             max_length=512, residual_graph=None, grow_map=None, sampling_callables = None,
