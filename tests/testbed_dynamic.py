@@ -44,7 +44,7 @@ args.P = 0.9
 args.M = 512
 args.dataset = 'cnn'
 args.start = 0
-args.end = 100
+args.end = 10
 args.scaling_factor = 1.0
 
 
@@ -82,8 +82,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 max_length=max_length,
                 device='cuda:0',
                 tree_size=args.tree_size,
-                scaling_factor=args.scaling_factor,
-                draft_temperature=args.draft_T
+                scaling_factor=args.scaling_factor
             )
             torch.cuda.synchronize()
             t1 = time.time()
