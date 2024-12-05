@@ -41,7 +41,7 @@ args.P = 1
 args.M = 256
 args.dataset = 'cnn'
 args.start = 0
-args.end = 1
+args.end = 5
 
 
 print(args)
@@ -61,9 +61,8 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
 
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
-            # input_ids = batch['input_ids'][..., :10]
-            input_ids = tokenizer.encode("The future of AI is really not promising because", return_tensors='pt').to('cuda:0')
-            labels = batch['labels'][..., :10]
+            input_ids = batch['input_ids'][..., :128]
+            labels = batch['labels'][..., :128]
 
             terminate = False
             if labels[0][-1] == -100:
@@ -81,7 +80,7 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
             )
             torch.cuda.synchronize()
             t1 = time.time()
-            while input_ids.shape[1] < 64 and terminate == False:
+            while input_ids.shape[1] < 200 and terminate == False:
                 
                 spectree.construct_grow_map()
                 valid_tokens, terminate = spectree.verify()
@@ -92,6 +91,8 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
 
                 if (input_ids[0][-1] == 2) or (input_ids[0][-1] == 0):
                     terminate = True
+
+            print(f"Sentence: {spectree.decode_tokens(input_ids[0])}")
 
             torch.cuda.synchronize()
             t2 = time.time()

@@ -312,20 +312,20 @@ class DynamicTree:
         # attention between tree tokens (note: skip root node)
         attn_mask[:, self.ground_truth_len:self.ground_truth_len + self.tree_size] = self.tree_mask[start_node_idx - 1:end_node_idx - 1, :]
 
-        print(f"self.num_nodes: {self.num_nodes}")
-        print(f"next_layer_num_nodes: {next_layer_num_nodes}")
-        print(f"start_pos: {start_pos}")
-        print(f"end_pos: {end_pos}")
-        print(f"start_node_idx: {start_node_idx}")
-        print(f"end_node_idx: {end_node_idx}")
+        # print(f"self.num_nodes: {self.num_nodes}")
+        # print(f"next_layer_num_nodes: {next_layer_num_nodes}")
+        # print(f"start_pos: {start_pos}")
+        # print(f"end_pos: {end_pos}")
+        # print(f"start_node_idx: {start_node_idx}")
+        # print(f"end_node_idx: {end_node_idx}")
 
-        print(f"self.tree_mask: {self.tree_mask}")
+        # print(f"self.tree_mask: {self.tree_mask}")
 
-        print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
-        print(f"position_ids: {position_ids.unsqueeze(0)}")
-        print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
-        print(f"attn_mask: {attn_mask[:, :30][None, None, :, :]}")
-        print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
+        # print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
+        # print(f"position_ids: {position_ids.unsqueeze(0)}")
+        # print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
+        # print(f"attn_mask: {attn_mask[:, :30][None, None, :, :]}")
+        # print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
 
         draft_model_outputs = self.draft_model_engine.graph_inference(
             input_ids = self.tokens[start_pos:end_pos].unsqueeze(0),
@@ -474,15 +474,16 @@ class DynamicTree:
                 break
 
         accept_length = len(accept_list)
+
+        # accept_list is a list of position indices
+        self.tokens[:accept_length] = self.tokens[accept_list]
+
         if not terminal:
             if torch.isnan(residual).any():
                 terminal = True
             else:
                 self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
                 print(f"Sampled bonus token: `{self.decode_tokens(self.tokens[accept_length].unsqueeze(0))}`")
-
-        # accept_list is a list of position indices
-        self.tokens[:accept_length] = self.tokens[accept_list]
 
         self.draft_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
         self.target_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
