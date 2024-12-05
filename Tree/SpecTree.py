@@ -5,6 +5,8 @@ import time
 from Engine.Engine import GraphInferenceEngine, GraphInferenceEngineTG
 from utils import get_sampling_logits, ChildrenAccept, get_residual
 
+from transformers import AutoTokenizer
+
 class SpecTree(Tree):
     def __init__(self, 
                  draft_model_engine :GraphInferenceEngine,
@@ -86,6 +88,7 @@ class SpecTree(Tree):
         self.rand = torch.empty((self.tree_size, self.draft_logits.shape[1]), dtype=self.dtype).uniform_().to(self.device)
         self.seq_to_use = list(range(self.max_length))
 
+        self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
     
     @torch.inference_mode()
     def collective_grow_static(self, idx_list :list[int], n_branch_list :list[int], benchmark=False, grow_step = None):
@@ -166,6 +169,11 @@ class SpecTree(Tree):
                 draft_logits[token] = torch.finfo(self.dtype).min
         # self.accept_idx_map[-1] += 1
         return (-1, p)
+    
+    def decode_tokens(self, tokens):
+        _str = self.tokenizer.decode(tokens, skip_special_tokens=True)
+        return _str
+
 
     @torch.inference_mode()
     def verify(self, benchmark = False):

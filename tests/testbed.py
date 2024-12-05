@@ -98,6 +98,10 @@ def simulation_fast(target_model : GraphInferenceEngineTG, draft_model: GraphInf
                 num_large_model_steps += 1
                 input_ids = valid_tokens.unsqueeze(0)
                 if (input_ids[0][-1] == 2) or (input_ids[0][-1] == 0): terminate = True
+            
+            # Print the model final output
+            print(spectree.decode_tokens(input_ids[0]))
+            
             torch.cuda.synchronize()
             t2 = time.time()
             total_time += (t2 - t1)
