@@ -36,7 +36,7 @@ args = parser.parse_args()
 
 args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
-args.T = 0.1
+args.T = 0.5
 args.P = 1
 args.M = 512
 args.dataset = 'cnn'

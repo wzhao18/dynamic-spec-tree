@@ -21,6 +21,7 @@ class DynamicTree:
         self.target_model_engine = target_model_engine
         self.prefix = prefix
         self.temperature = temperature
+        self.draft_temperature = 0.6
         self.top_p = top_p
         self.max_length = max_length
         self.device = device
@@ -32,8 +33,8 @@ class DynamicTree:
         self.ground_truth_len = len(prefix)
         self.ground_truth = prefix
 
-        print(f"prefix: {prefix}")
-        print(f"self.num_nodes: {self.num_nodes}")
+        # print(f"prefix: {prefix}")
+        # print(f"self.num_nodes: {self.num_nodes}")
 
         # generated + speculated tokens
         self.tokens = torch.zeros(max_length, device=device).long()
@@ -71,7 +72,7 @@ class DynamicTree:
         self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
 
         prefix_string = self.decode_tokens(self.prefix)
-        print(f"prefix_string: {prefix_string}")
+        # print(f"prefix_string: {prefix_string}")
 
     def reset_tree(self):
         self.node_id_to_seq = {0: self.ground_truth}
@@ -188,17 +189,17 @@ class DynamicTree:
         layer_node_indices = self.node_indices[grow_step]
 
         # take softmax of logits
-        sampling_q = softmax(self.draft_logits[layer_node_indices] / self.temperature, dim=-1)
+        sampling_q = softmax(self.draft_logits[layer_node_indices] / self.draft_temperature, dim=-1)
 
-        print("=========================================")
-        print(f"grow step {grow_step} layer tokens:")
+        # print("=========================================")
+        # print(f"grow step {grow_step} layer tokens:")
 
         # iterate over each node and sample its children
         for i in range(len(layer_node_indices)):
 
             node_idx = layer_node_indices[i]
 
-            print(f"node_idx: {node_idx}")
+            # print(f"node_idx: {node_idx}")
 
             subtree_size = self.subtree_sizes[node_idx]
             if grow_step == 0:
@@ -213,16 +214,16 @@ class DynamicTree:
 
             logit = sampling_q[i]
 
-            top_scores, top_indices = torch.topk(logit, k=5)
+            # top_scores, top_indices = torch.topk(logit, k=5)
 
-            sequence = self.node_id_to_seq[node_idx]
-            print(f"Sequence: {self.decode_tokens(sequence)}")
+            # sequence = self.node_id_to_seq[node_idx]
+            # print(f"Sequence: {self.decode_tokens(sequence)}")
 
-            print("Top 5 Confidence Scores:")
-            for score, idx in zip(top_scores, top_indices):
-                print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
+            # print("Top 5 Confidence Scores:")
+            # for score, idx in zip(top_scores, top_indices):
+            #     print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
 
-            print(f"num_descandents: {num_descandents}")
+            # print(f"num_descandents: {num_descandents}")
 
             scores, sorted_indices = torch.topk(logit, k=num_descandents)
             token_ids = sorted_indices
@@ -267,19 +268,19 @@ class DynamicTree:
 
             children_node_indices = list(range(last_node_idx + 1, last_node_idx + 1 + num_children))
 
-            for i in range(num_children):
-                self.node_id_to_seq[children_node_indices[i]] = torch.cat([self.node_id_to_seq[node_idx], token_ids[i].unsqueeze(0)])
+            # for i in range(num_children):
+            #     self.node_id_to_seq[children_node_indices[i]] = torch.cat([self.node_id_to_seq[node_idx], token_ids[i].unsqueeze(0)])
 
             next_layer_node_indices.extend(children_node_indices)
             self.children.append(children_node_indices)
 
-            for i in range(num_children):
-                print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
+            # for i in range(num_children):
+                # print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
 
             self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids[:num_children]
             self.num_nodes += num_children
 
-            print(f"self.num_nodes: {self.num_nodes}")
+            # print(f"self.num_nodes: {self.num_nodes}")
 
             for child_node_idx in children_node_indices:
 
@@ -292,16 +293,16 @@ class DynamicTree:
 
                 self.depths.append(grow_step + 1)
 
-            print("=========================================")
-            print()
+            # print("=========================================")
+            # print()
 
         if not next_layer_node_indices:
 
-            print(f"self.node_indices: {self.node_indices}")
-            print(f"self.subtree_sizes: {self.subtree_sizes}")
-            print(f"self.children: {self.children}")
-            print(f"self.depths: {self.depths}")
-            print(f"self.layer_branches: {self.layer_branches}")
+            # print(f"self.node_indices: {self.node_indices}")
+            # print(f"self.subtree_sizes: {self.subtree_sizes}")
+            # print(f"self.children: {self.children}")
+            # print(f"self.depths: {self.depths}")
+            # print(f"self.layer_branches: {self.layer_branches}")
 
             return
         
@@ -309,11 +310,11 @@ class DynamicTree:
         self.subtree_sizes.extend(next_layer_tree_sizes)
         self.layer_branches.append(layer_branch)
         
-        print(f"self.node_indices: {self.node_indices}")
-        print(f"self.subtree_sizes: {self.subtree_sizes}")
-        print(f"self.children: {self.children}")
-        print(f"self.depths: {self.depths}")
-        print(f"self.layer_branches: {self.layer_branches}")
+        # print(f"self.node_indices: {self.node_indices}")
+        # print(f"self.subtree_sizes: {self.subtree_sizes}")
+        # print(f"self.children: {self.children}")
+        # print(f"self.depths: {self.depths}")
+        # print(f"self.layer_branches: {self.layer_branches}")
 
         next_layer_num_nodes = len(next_layer_node_indices)
         start_pos = self.num_nodes - next_layer_num_nodes
@@ -454,8 +455,8 @@ class DynamicTree:
                                         storage_ids=self.storage_ids[start_pos : end_pos])
             self.target_logits :torch.FloatTensor = target_model_outputs[0]
         
-        print(f"len(self.target_logits): {len(self.target_logits)}")
-        print(f"self.ground_truth_len: {self.ground_truth_len}")
+        # print(f"len(self.target_logits): {len(self.target_logits)}")
+        # print(f"self.ground_truth_len: {self.ground_truth_len}")
 
         assert len(self.target_logits) == (self.num_nodes - self.ground_truth_len + 1)
 
@@ -463,22 +464,22 @@ class DynamicTree:
         
         self.target_logits = softmax(self.target_logits / self.temperature, dim=-1)
         
-        print("=================Target Logits===================")
+        # print("=================Target Logits===================")
 
-        # print top 5 tokens
-        for i in range(len(self.target_logits)):
+        # # print top 5 tokens
+        # for i in range(len(self.target_logits)):
 
-            sequence = self.node_id_to_seq[i]
-            print(f"Sequence: {self.decode_tokens(sequence)}")
+        #     sequence = self.node_id_to_seq[i]
+        #     print(f"Sequence: {self.decode_tokens(sequence)}")
 
-            top_scores, top_indices = torch.topk(self.target_logits[i], k=5)
-            for score, idx in zip(top_scores, top_indices):
-                print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
+        #     top_scores, top_indices = torch.topk(self.target_logits[i], k=5)
+        #     for score, idx in zip(top_scores, top_indices):
+        #         print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
 
-            print()
+        #     print()
 
-        print("=================Target Logits end===================")
-        print()
+        # print("=================Target Logits end===================")
+        # print()
 
         accept_list = list(range(self.ground_truth_len))
 
@@ -488,13 +489,13 @@ class DynamicTree:
             parent_id = accept_list[-1]
             pos, res = self.accept_step(parent_id)
             if pos != -1:
-                print(f"Accepted Token Index {pos}: `{self.decode_tokens(self.tokens[pos].unsqueeze(0))}`") 
+                # print(f"Accepted Token Index {pos}: `{self.decode_tokens(self.tokens[pos].unsqueeze(0))}`") 
                 accept_list.append(pos)
                 if self.tokens[pos] == 0 or self.tokens[pos] == 2:
                     terminal = True
                     break
             else:
-                print("Rejected Token")
+                # print("Rejected Token")
                 residual = res
                 break
 
@@ -508,7 +509,7 @@ class DynamicTree:
                 terminal = True
             else:
                 self.tokens[accept_length] = residual.multinomial(num_samples=1, replacement=True)
-                print(f"Sampled bonus token: `{self.decode_tokens(self.tokens[accept_length].unsqueeze(0))}`")
+                # print(f"Sampled bonus token: `{self.decode_tokens(self.tokens[accept_length].unsqueeze(0))}`")
 
         self.draft_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
         self.target_model_engine.engine.kv_cache.gather_kv_incremental(accept_list[self.ground_truth_len:], self.ground_truth_len)
@@ -548,16 +549,16 @@ class DynamicTree:
         self.draft_kv_len = len(valid_tokens)
         self.target_kv_len = accept_length
 
-        print(f"self.target_kv_len: {self.target_kv_len}")
+        # print(f"self.target_kv_len: {self.target_kv_len}")
 
         self.reset_tree()
 
-        print("=================Draft Bonus Logit===================")
-        print(f"Sequence: {self.decode_tokens(valid_tokens)}")
+        # print("=================Draft Bonus Logit===================")
+        # print(f"Sequence: {self.decode_tokens(valid_tokens)}")
 
-        top_scores, top_indices = torch.topk(softmax(self.draft_logits[0] / self.temperature, dim=-1), k=5)
-        for score, idx in zip(top_scores, top_indices):
-            print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
+        # top_scores, top_indices = torch.topk(softmax(self.draft_logits[0] / self.temperature, dim=-1), k=5)
+        # for score, idx in zip(top_scores, top_indices):
+        #     print(f"Token: {self.decode_tokens(idx)} Score: {score.item():.4f}")
 
-        print("=================Draft Bonus Logit End===================")
-        print()
+        # print("=================Draft Bonus Logit End===================")
+        # print()

@@ -73,7 +73,7 @@ class SpecTree(Tree):
                                 position_ids=self.position_ids[:self.num_nodes].unsqueeze(0),
                                 attn_mask=self.attn_mask[:self.num_nodes][None, None, :, :])
             self.draft_logits[0] = draft_model_outputs[...,-1,:][0]
-            print(f"attn_mask: {self.attn_mask[:self.num_nodes][None, None, :, :]}")
+            # print(f"attn_mask: {self.attn_mask[:self.num_nodes][None, None, :, :]}")
         
         else:
             draft_model_outputs = self.draft_model_engine.inference(input_ids = self.tokens[draft_kv_len: self.num_nodes].unsqueeze(0), 
