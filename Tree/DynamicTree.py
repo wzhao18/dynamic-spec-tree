@@ -188,7 +188,7 @@ class DynamicTree:
         layer_node_indices = self.node_indices[grow_step]
 
         # take softmax of logits
-        sampling_q = softmax(self.draft_logits[layer_node_indices] / 1, dim=-1)
+        sampling_q = softmax(self.draft_logits[layer_node_indices] / self.temperature, dim=-1)
 
         print("=========================================")
         print(f"grow step {grow_step} layer tokens:")
@@ -307,21 +307,25 @@ class DynamicTree:
         )
 
         # attend to previous tokens
-        attn_mask[:, :start_pos] = 0
+        attn_mask[:, :self.ground_truth_len] = 0
 
         # attention between tree tokens (note: skip root node)
-        attn_mask[:, start_pos:start_pos + self.tree_size] = self.tree_mask[start_node_idx - 1:end_node_idx - 1, :]
+        attn_mask[:, self.ground_truth_len:self.ground_truth_len + self.tree_size] = self.tree_mask[start_node_idx - 1:end_node_idx - 1, :]
 
-        # print(f"self.num_nodes: {self.num_nodes}")
-        # print(f"next_layer_num_nodes: {next_layer_num_nodes}")
-        # print(f"start_pos: {start_pos}")
-        # print(f"end_pos: {end_pos}")
+        print(f"self.num_nodes: {self.num_nodes}")
+        print(f"next_layer_num_nodes: {next_layer_num_nodes}")
+        print(f"start_pos: {start_pos}")
+        print(f"end_pos: {end_pos}")
+        print(f"start_node_idx: {start_node_idx}")
+        print(f"end_node_idx: {end_node_idx}")
 
-        # print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
-        # print(f"position_ids: {position_ids.unsqueeze(0)}")
-        # print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
-        # print(f"attn_mask: {attn_mask[None, None, :, :]}")
-        # print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
+        print(f"self.tree_mask: {self.tree_mask}")
+
+        print(f"input_ids: {self.tokens[start_pos:end_pos].unsqueeze(0)}")
+        print(f"position_ids: {position_ids.unsqueeze(0)}")
+        print(f"attn_mask.shape: {attn_mask[None, None, :, :].shape}")
+        print(f"attn_mask: {attn_mask[:, :30][None, None, :, :]}")
+        print(f"storage_ids: {self.storage_ids[start_pos:end_pos]}")
 
         draft_model_outputs = self.draft_model_engine.graph_inference(
             input_ids = self.tokens[start_pos:end_pos].unsqueeze(0),

@@ -19,9 +19,9 @@ from Engine.offload_engine import OffloadEngine
 import random
 
 M = 256
-model_name_or_path = "meta-llama/Llama-2-7b-hf"
-# model_name_or_path = "JackFram/llama-68m"
-T = 1
+# model_name_or_path = "meta-llama/Llama-2-7b-hf"
+model_name_or_path = "JackFram/llama-68m"
+T = 0.1
 p = 1.0
 seed = 17
 
@@ -44,7 +44,7 @@ top_p = p
 from transformers import AutoTokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
-input_ids = tokenizer.encode("(CNN)These are fearful times", return_tensors='pt').to('cuda:0')
+input_ids = tokenizer.encode("The tree is a great", return_tensors='pt').to('cuda:0')
 all_tokens = input_ids
 
 inner_decoding_step = 0
