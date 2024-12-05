@@ -35,11 +35,13 @@ parser.add_argument('--offloading', action='store_true')
 args = parser.parse_args()
 
 args.model = 'JackFram/llama-68m'
-args.target = 'JackFram/llama-68m'
-args.T = 0.5
+args.target = 'meta-llama/Llama-2-7b-hf'
+args.T = 0.1
 args.P = 1
 args.M = 256
 args.dataset = 'cnn'
+args.start = 0
+args.end = 1
 
 
 print(args)
