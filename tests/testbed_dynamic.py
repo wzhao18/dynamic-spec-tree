@@ -27,6 +27,7 @@ parser.add_argument('--tree_size', type=int, default=64)
 parser.add_argument('--start', type=int, default=0, help='start')
 parser.add_argument('--end', type=int, default=200, help='end')
 parser.add_argument('--T', type=float, default=0.6, help='temperature')
+parser.add_argument('--draft_T', type=float, default=0.6, help='draft temperature')
 parser.add_argument('--P', type=float, default=0.9, help='top_p')
 parser.add_argument('--M', type=int, default=256, help='max length')
 parser.add_argument('--seed', type=int, default=17, help='random seed')
@@ -37,6 +38,7 @@ args = parser.parse_args()
 args.model = 'JackFram/llama-68m'
 args.target = 'meta-llama/Llama-2-7b-hf'
 args.T = 0.5
+args.draft_T = 0.7
 args.P = 1
 args.M = 512
 args.dataset = 'cnn'

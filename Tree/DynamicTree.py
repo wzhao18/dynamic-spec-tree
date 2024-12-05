@@ -12,6 +12,7 @@ class DynamicTree:
                  target_model_engine :GraphInferenceEngineTG,
                  prefix :torch.LongTensor,
                  temperature :float = 0.6,
+                 draft_temperature: float = 0.6,
                  top_p: float = 0.9,
                  max_length = 256,
                  device :str = 'cpu',
@@ -21,7 +22,7 @@ class DynamicTree:
         self.target_model_engine = target_model_engine
         self.prefix = prefix
         self.temperature = temperature
-        self.draft_temperature = 0.6
+        self.draft_temperature = draft_temperature
         self.top_p = top_p
         self.max_length = max_length
         self.device = device
