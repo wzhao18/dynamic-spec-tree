@@ -242,6 +242,7 @@ class DynamicTree:
                 child_tree_sizes.append(child_tree_size)
 
                 num_children += 1
+                curr_idx += 1
                 remain_quota -= child_tree_size
 
             # if num_descandents > 0:
@@ -278,7 +279,9 @@ class DynamicTree:
             self.children.append(children_node_indices)
 
             # for i in range(num_children):
-                # print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
+            #     print(f"\tCandidate Token: `{self.decode_tokens(token_ids[i])}`")
+            #     print(f"confidence: {scores[i]}")
+            #     print(f"Child Tree size: {child_tree_sizes[i]}")
 
             self.tokens[self.num_nodes: self.num_nodes + num_children] = token_ids[:num_children]
             self.num_nodes += num_children
