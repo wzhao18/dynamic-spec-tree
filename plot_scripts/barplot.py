@@ -7,30 +7,24 @@ import pandas as pd
 # temp 0.6
 # top_p 0.9 
 
-# TODO: replace these values. 
-gpu_testbed = 2
-gpu_testbed_dynamic = 2
-cpu_testbed = 2
-cpu_testbed_dynamic = 3
+ 
+gpu_testbed = 2.05159
+gpu_testbed_dynamic = 2.1020558
+cpu_testbed = 2    # TODO: replace these values.
+cpu_testbed_dynamic = 3     # TODO: replace these values.
 
-# Data for plotting
 data = {
     'Type': ['GPU', 'GPU', 'CPU', 'CPU'],
     'Legend': ['Sequoia', 'Ours', 'Sequoia', 'Ours'],
     'Speedup': [gpu_testbed, gpu_testbed_dynamic, cpu_testbed, cpu_testbed_dynamic]
 }
 
-# Create a DataFrame
 df = pd.DataFrame(data)
-
-# Plot a bar plot with four bars using seaborn
 plt.figure(figsize=(5, 4))
 sns.barplot(x='Type', y='Speedup', hue='Legend', data=df)
 
-# Set labels and title
 plt.xlabel('Type')
-plt.ylabel('Speedup')
+plt.ylabel('Latency Speedup')
 plt.title('Speedup Comparison')
 
-# Show plot
 plt.savefig('barplot.png')
