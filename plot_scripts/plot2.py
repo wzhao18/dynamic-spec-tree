@@ -1,6 +1,6 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 """ These values are updated with latest values. """
 
@@ -19,7 +19,9 @@ sns.lineplot(x=p, y=num_tokens_testbed)
 sns.scatterplot(x=p, y=num_tokens_testbed_dynamic, label='Ours')
 sns.lineplot(x=p, y=num_tokens_testbed_dynamic)
 
-plt.ylim(2.5, 4.5)
+# plt.ylim(3, 4.5)
+plt.xticks(np.arange(0.6, 1.05, step=0.1)) 
+plt.yticks(np.arange(3, 4.6, step=0.25)) 
 
 plt.xlabel('top_p')
 plt.ylabel('Avg Num Tokens per decoding step')
